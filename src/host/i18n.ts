@@ -123,15 +123,32 @@ export interface HostCopy {
   }
 }
 
+// Keep the same admission policy in system guidance, steering, and the write tool.
+const zhMemoryPolicy =
+  '目标是精选长期记忆，不是工作日志。自动写入仅限：用户明确的长期偏好与约束、已验证且现有规则未覆盖的可复用经验、用户认可且未来可复用的新流程。' +
+  '候选必须长期有效、能跨任务复用，且不重复现有工具说明、流程或记忆；有新事实或完成任务本身不是写入理由。' +
+  '不自动记录任务进度、Job ID、交付路径、生成耗时、临时选择、待授权状态、待办和普通执行结果；不要把一次选择推断为长期偏好。' +
+  '历史任务细节留在会话和任务记录中，不为接续任务复制到长期记忆。先判断价值，再按需用 memoir_read 检查重复；已有相同内容则不新增，已确认的纠正优先更新原条目。' +
+  '不确定是否值得长期保存时不写；没有合格候选时不调用记忆工具，不为完成提醒而凑记录。' +
+  '用户明确要求“记住”某项内容时，可按其指定范围记录，即使只是本次任务；不要扩大范围。'
+
+const enMemoryPolicy =
+  'Use curated long-term memory, not a work log. Automatic writes are limited to explicit user long-term preferences and constraints, verified reusable lessons not covered by existing rules, and user-approved new workflows with future reuse. ' +
+  'Candidates must remain useful across tasks and add to existing tool documentation, workflows, and memory; a new fact or completed task alone is not a reason to write. ' +
+  'Do not automatically record task progress, Job IDs, delivery paths, generation timings, temporary choices, pending authorization, to-dos, or routine results; never infer a lasting preference from one choice. ' +
+  'Leave task details in conversation and task records instead of copying them into long-term memory for handoff. Assess value first, then use memoir_read only as needed to check duplicates; skip identical content and prefer updating a confirmed correction. ' +
+  'If uncertain about lasting value, do not write; with no qualified candidate, call no memory tools and do not invent an entry to satisfy the reminder. ' +
+  'When the user explicitly asks to remember something, record only the requested scope, even if task-specific; do not broaden it.'
+
 const zh: HostCopy = {
   guidance:
-    'dsh-memoir 提供项目持久记忆。下方仅注入本项目高优先级记忆；' +
-    '需要历史细节时调用 memoir_read；产生可复用的工作结论、经验或后续行动时调用 memoir_record。',
+    'dsh-memoir-sqlite 提供项目持久记忆。下方仅注入本项目高优先级记忆；' +
+    '需要历史细节时调用 memoir_read。' + zhMemoryPolicy,
   sectionHeading: '## 项目持久记忆（自动注入）',
   distillPrompt:
-    '（dsh-memoir 自动收尾）本轮工作已结束，请把本轮归纳沉淀进项目记忆：\n' +
-    '1. 若本轮有实质产出、踩坑结论或下一步安排，调用 memoir_record 分条记录（section 可选 work 工作记录 / lessons 经验教训 / actions 行动指南，可用 title 一句话概括）；\n' +
-    '2. 若本轮已经记录过、或没有值得沉淀的内容，直接回复“本轮无需沉淀”，不要调用任何工具。\n' +
+    '（dsh-memoir-sqlite 自动收尾）只检查是否出现合格的长期记忆，不要求总结本轮工作。\n' +
+    zhMemoryPolicy + '\n' +
+    '合格且未记录的候选才调用 memoir_record；否则直接回复“本轮无需沉淀”。\n' +
     '最终回复保持一句话以内，不要展开。',
   sections: {
     work: { label: '工作记录', header: '## 工作记录 Work Log' },
@@ -148,7 +165,7 @@ const zh: HostCopy = {
   markdown: {
     title: '# 项目持久记忆 Project Memory',
     intro: [
-      '> 本文件由 dsh-memoir 插件维护：记录本项目历次会话的工作归纳、经验教训与行动指南，',
+      '> 本文件由 dsh-memoir-sqlite 插件维护：精选长期偏好、可复用经验、认可的流程和用户明确要求保存的内容，',
       '> 作为未来 AGENTS 接手本项目时的行动指南；它是人类可读的投影，不是 system prompt 的完整注入内容。',
       '> 新会话只注入有界的 Hot Memory，完整历史通过 memoir_read 按需检索。',
     ],
@@ -156,12 +173,12 @@ const zh: HostCopy = {
   },
   record: {
     description:
-      '把一条记忆写入项目持久记忆，供未来会话继承。阶段任务收尾时归纳“做了什么(work)/经验教训(lessons)/下一步行动(actions)”分条记录。' +
+      '把一条记忆写入项目持久记忆，供未来会话继承。' + zhMemoryPolicy +
       '写入前会返回疑似重复/冲突候选且不自动改动；收到候选后必须明确选择 resolution=update（更新候选）、supersede（新结论替代候选）或 force-record（确认并存）。' +
-      '触发场景：记录经验教训、沉淀记忆、归纳工作、更新行动指南、总结踩坑。',
+      'work / lessons / actions / note 仅用于分类，分类名称不是自动写入理由。',
     section: '记忆分类：work 工作记录 / lessons 经验教训 / actions 行动指南 / note 备注。',
     title: '可选，一句话标题（如“修复 pet 悬停闪退”）。',
-    content: '记忆正文：具体做了什么、结论、教训或下一步怎么做。建议精炼、可执行。',
+    content: '长期偏好、已验证经验或认可流程：说明适用条件与可复用结论，不写任务流水账；用户明确要求记录时限于指定内容。',
     importance: '可选，重要度 1 到 5；默认为 3。',
     pinned: '可选，是否置顶此条目。',
     supersedes: '可选，此条目显式替代的旧记忆 id 列表。',
@@ -252,13 +269,13 @@ const zh: HostCopy = {
 
 const en: HostCopy = {
   guidance:
-    'dsh-memoir provides persistent project memory. Only high-priority memory for this project is injected below; ' +
-    'call memoir_read for historical details, and call memoir_record when you produce reusable conclusions, lessons, or follow-up actions.',
+    'dsh-memoir-sqlite provides persistent project memory. Only high-priority memory for this project is injected below; ' +
+    'call memoir_read for historical details. ' + enMemoryPolicy,
   sectionHeading: '## Persistent project memory (automatically injected)',
   distillPrompt:
-    '(dsh-memoir automatic wrap-up) This work turn has ended. Distill it into project memory:\n' +
-    '1. If the turn produced substantive work, a reusable lesson, or a next action, call memoir_record once per item (section: work, lessons, or actions; use title for a one-line summary).\n' +
-    '2. If the turn was already recorded or has nothing worth preserving, reply “Nothing to distill for this turn” without calling any tool.\n' +
+    '(dsh-memoir-sqlite automatic wrap-up) Check only for qualified long-term memory; a turn summary is not required.\n' +
+    enMemoryPolicy + '\n' +
+    'Call memoir_record only for qualified, unrecorded candidates; otherwise reply “Nothing to distill for this turn”.\n' +
     'Keep the final reply to one sentence and do not elaborate.',
   sections: {
     work: { label: 'Work Log', header: '## Work Log' },
@@ -275,7 +292,7 @@ const en: HostCopy = {
   markdown: {
     title: '# Persistent Project Memory',
     intro: [
-      '> Maintained by dsh-memoir: a cross-session record of completed work, lessons learned, and follow-up actions.',
+      '> Maintained by dsh-memoir-sqlite: curated long-term preferences, reusable lessons, approved workflows, and explicitly requested records.',
       '> This human-readable projection guides future agents; it is not injected into the system prompt in full.',
       '> New sessions receive only bounded Hot Memory. Use memoir_read to retrieve complete history on demand.',
     ],
@@ -283,12 +300,12 @@ const en: HostCopy = {
   },
   record: {
     description:
-      'Persist one project-memory entry for future sessions. At the end of a task, record completed work (work), reusable lessons (lessons), and follow-up actions (actions) as separate entries. ' +
+      'Persist one project-memory entry for future sessions. ' + enMemoryPolicy + ' ' +
       'Before writing, the tool returns possible duplicates or conflicts without changing data; when candidates exist, explicitly choose resolution=update, supersede, or force-record. ' +
-      'Triggers: record a lesson, preserve context, distill work, update an action guide, or capture a pitfall.',
+      'work / lessons / actions / note are categories only, not reasons to write automatically.',
     section: 'Memory section: work / lessons / actions / note.',
     title: 'Optional one-line title, for example “Fix pet hover crash”.',
-    content: 'The concrete work, conclusion, lesson, or next action. Keep it concise and actionable.',
+    content: 'A lasting preference, verified lesson, or approved workflow with its conditions and reusable conclusion, not a task log; explicit requests stay within their specified scope.',
     importance: 'Optional importance from 1 to 5; defaults to 3.',
     pinned: 'Optional flag that keeps this entry prominent.',
     supersedes: 'Optional IDs of entries this record explicitly supersedes.',

@@ -196,6 +196,16 @@ test('POST without application/json is a 415 (CSRF gate)', async () => {
   assert.equal(envelope.error?.code, 'content-type')
 })
 
+test('ui-config route defaults to the public Conversation view', async () => {
+  const handler = makeRoutes(new MemoirStore(makeTempStorePath()))[0]!.handler
+  const fallback = await callRoute(handler, { url: '/api/dsh-memoir/ui-config' })
+  assert.deepEqual(fallback.envelope.value, { showConversationView: true })
+
+  const configured = makeRoutes(new MemoirStore(makeTempStorePath()), undefined, undefined, undefined, undefined, undefined, undefined, () => ({ showConversationView: false }))[0]!.handler
+  const hidden = await callRoute(configured, { url: '/api/dsh-memoir/ui-config' })
+  assert.deepEqual(hidden.envelope.value, { showConversationView: false })
+})
+
 test('settings route reads, persists, validates, and resets the live auto-distill policy', async () => {
   const path = makeTempStorePath()
   try {

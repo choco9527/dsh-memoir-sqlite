@@ -162,12 +162,15 @@ test('update edits an entry and explicitly supersedes selected history', () => {
     assert.deepEqual(updated?.tags, ['release'])
     assert.deepEqual(updated?.supersedes, [old.id])
     assert.equal(updated?.time, originalTime, 'editing preserves creation time')
+    assert.equal(updated?.version, 2)
+    assert.ok((updated?.updatedAt ?? 0) >= originalTime)
     assert.equal(store.entries(ws.cwd).find((entry) => entry.id === old.id)?.status, 'superseded')
 
     const cleared = store.update(ws.cwd, current.id, { title: null, tags: [] })
     assert.equal(cleared?.title, undefined)
     assert.equal(cleared?.tags, undefined)
-    assert.ok(readFileSync(store.path, 'utf8').includes('新命令'))
+    assert.equal(cleared?.version, 3)
+    assert.equal(new MemoirStore(store.path).entries(ws.cwd).find((entry) => entry.id === current.id)?.content, '新命令')
   } finally {
     ws.cleanup()
   }
@@ -181,13 +184,15 @@ test('empty project renders the placeholder', () => {
 
 test('legacy v1 entries (no id) are normalized with minted ids', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  writeFileSync(legacyPath, JSON.stringify({
     version: 1,
     projects: {
       'C:\\old': { path: 'C:\\old', title: 'old', updatedAt: 1000, entries: [{ section: 'work', content: 'legacy', time: 1000 }] },
     },
   }))
   const store = new MemoirStore(path)
+  assert.equal(store.importLegacyJson(legacyPath), 1)
   const entries = store.entries('C:\\old')
   assert.equal(entries.length, 1)
   assert.equal(entries[0]?.content, 'legacy')
@@ -197,7 +202,8 @@ test('legacy v1 entries (no id) are normalized with minted ids', () => {
 
 test('v3 top-level sessionId is lazily lifted into the v4 source object', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  writeFileSync(legacyPath, JSON.stringify({
     version: 3,
     projects: {
       'C:\\old': {
@@ -209,18 +215,21 @@ test('v3 top-level sessionId is lazily lifted into the v4 source object', () => 
     },
   }))
   const store = new MemoirStore(path)
+  store.importLegacyJson(legacyPath)
   assert.deepEqual(store.entries('C:\\old')[0]?.source, { sessionId: 'session-v3' })
   assert.equal(store.load().version, FORMAT_VERSION)
-  assert.match(readFileSync(path, 'utf8'), /"version":3/, 'read-only normalization does not rewrite disk')
+  assert.match(readFileSync(legacyPath, 'utf8'), /"version":3/, 'import does not rewrite the legacy file')
 })
 
 test('unknown sections in legacy data fall back to note', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  writeFileSync(legacyPath, JSON.stringify({
     version: 1,
     projects: { 'C:\\x': { path: 'C:\\x', entries: [{ section: 'bogus', content: 'x', time: 1 }] } },
   }))
   const store = new MemoirStore(path)
+  store.importLegacyJson(legacyPath)
   assert.equal(store.entries('C:\\x')[0]?.section, 'note')
 })
 
@@ -250,7 +259,8 @@ test('projectKey fully lowercases windows drive paths (one bucket)', () => {
 
 test('windows case variants merge into one store bucket, display path kept', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  writeFileSync(legacyPath, JSON.stringify({
     version: 2,
     projects: {
       'C:\\A': { path: 'C:\\A', title: 'proj', updatedAt: 1, entries: [{ id: 'e1', section: 'work', content: 'one', time: 1 }] },
@@ -259,6 +269,7 @@ test('windows case variants merge into one store bucket, display path kept', () 
     },
   }))
   const store = new MemoirStore(path)
+  store.importLegacyJson(legacyPath)
   const projects = store.listProjects()
   assert.equal(projects.length, 1, 'one canonical bucket')
   assert.equal(store.entries('c:\\a').length, 3, 'all three case variants merged')
@@ -304,21 +315,29 @@ test('withFileLock conservatively reclaims an old dead-owner lock', () => {
 
 test('v2 entries migrate to lifecycle defaults and first mutation persists the current format', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  const workspace = makeTempWorkspace()
+  writeFileSync(legacyPath, JSON.stringify({
     version: 2,
-    projects: { 'C:\\legacy': { path: 'C:\\legacy', title: 'legacy', updatedAt: 1, entries: [{ id: 'old-id', section: 'work', content: 'old', time: 1 }] } },
+    projects: { [workspace.cwd]: { path: workspace.cwd, title: 'legacy', updatedAt: 1, entries: [{ id: 'old-id', section: 'work', content: 'old', time: 1 }] } },
   }))
   const store = new MemoirStore(path)
-  const old = store.entries('C:\\legacy')[0]!
-  assert.equal(old.id, 'old-id')
-  assert.equal(old.importance, 3)
-  assert.equal(old.pinned, false)
-  assert.equal(old.status, 'active')
-  assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, 2, 'startup read does not rewrite the legacy file')
-  store.record('C:\\legacy', { section: 'lessons', content: 'new', importance: 5, pinned: true, supersedes: ['old-id'] })
-  const persisted = JSON.parse(readFileSync(path, 'utf8')) as { version: number; projects: Record<string, { entries: Array<{ id: string; status: string }> }> }
-  assert.equal(persisted.version, FORMAT_VERSION)
-  assert.equal(persisted.projects['c:/legacy']?.entries.find((entry) => entry.id === 'old-id')?.status, 'superseded')
+  try {
+    store.importLegacyJson(legacyPath)
+    const old = store.entries(workspace.cwd)[0]!
+    assert.equal(old.id, 'old-id')
+    assert.equal(old.importance, 3)
+    assert.equal(old.pinned, false)
+    assert.equal(old.status, 'active')
+    assert.equal(JSON.parse(readFileSync(legacyPath, 'utf8')).version, 2, 'import does not rewrite the legacy file')
+    store.record(workspace.cwd, { section: 'lessons', content: 'new', importance: 5, pinned: true, supersedes: ['old-id'] })
+    const persisted = new MemoirStore(path).load()
+    assert.equal(persisted.version, FORMAT_VERSION)
+    assert.equal(persisted.projects[workspace.cwd]?.entries.find((entry) => entry.id === 'old-id')?.status, 'superseded')
+  } finally {
+    store.close()
+    workspace.cleanup()
+  }
 })
 
 test('two store instances mutating one file lose no updates', () => {

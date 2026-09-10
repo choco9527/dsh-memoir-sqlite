@@ -1,10 +1,10 @@
 /**
- * dsh-memoir — host half.
+ * dsh-memoir-sqlite — host half.
  *
  * 把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为项目持久化记忆，
  * 并作为未来 AGENTS 的行动指南：
  *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
- *   - 全局索引：~/.dsh/dsh-memoir.json（结构化源数据，跨项目检索）
+ *   - 结构化存储：$DSH_HOME/dsh-memoir-sqlite/memory.db（SQLite）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
  *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
  *
@@ -54,6 +54,8 @@ const SECTION_ORDER = 150
 export interface Config {
   /** Master switch for the plugin (tools, routes, prompt section). */
   enabled?: boolean
+  /** Register the optional per-conversation Memory view (default true). */
+  showConversationView?: boolean
   /** Language for agent-facing prompts, tools, results, and errors. */
   language?: MemoirLanguage
   /** When true (default), a system-prompt section announces the plugin. */
@@ -111,6 +113,7 @@ export const MEMOIR_SECTION_HEADING = memoirSectionHeading()
 /** Resolved runtime switches (schema defaults applied). */
 export interface ResolvedConfig {
   enabled: boolean
+  showConversationView: boolean
   language: MemoirLanguage
   announceToAgent: boolean
   autoDistill: boolean
@@ -135,6 +138,7 @@ function resolveConfig(config: Config | undefined): ResolvedConfig {
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, value) : fallback
   return {
     enabled: config?.enabled ?? DEFAULT_ENABLED,
+    showConversationView: config?.showConversationView ?? true,
     language: resolveMemoirLanguage(config?.language),
     announceToAgent: config?.announceToAgent ?? DEFAULT_ANNOUNCE,
     autoDistill: config?.autoDistill ?? DEFAULT_AUTO_DISTILL,
@@ -229,6 +233,7 @@ export function apply(ctx: Context, config?: Config): void {
   const store = new MemoirStore(config?.storePath, {
     language: () => liveSettings.get().settings.language,
   })
+  ctx.effect(() => () => store.close(), 'dsh-memoir-sqlite: database')
   const initialLive = liveSettings.get().settings
   const snapshotManager = new MemorySnapshotManager({ max: initialLive.sessionSnapshotMax })
   const retrieval = new RetrievalEngine(store, { cacheSize: initialLive.queryCacheSize })
@@ -267,7 +272,7 @@ export function apply(ctx: Context, config?: Config): void {
       unsubscribe()
       for (const dispose of disposers) dispose()
     }
-  }, 'dsh-memoir: tools')
+  }, 'dsh-memoir-sqlite: tools')
 
   ctx.effect(() => {
     const diagnostics = (path?: string) => {
@@ -328,11 +333,20 @@ export function apply(ctx: Context, config?: Config): void {
     }
     const allowedWorkspace = (path: string): boolean =>
       recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
-    const disposers = makeRoutes(store, diagnostics, retrieval, hotMemoryPreview, allowedWorkspace, undefined, liveSettings).map((route) => ctx.webServer.register(route))
+    const disposers = makeRoutes(
+      store,
+      diagnostics,
+      retrieval,
+      hotMemoryPreview,
+      allowedWorkspace,
+      undefined,
+      liveSettings,
+      () => ({ showConversationView: value.showConversationView }),
+    ).map((route) => ctx.webServer.register(route))
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, 'dsh-memoir: routes')
+  }, 'dsh-memoir-sqlite: routes')
 
   ctx.effect(
     () => installAutoDistill(autoDistillWire(ctx), {
@@ -347,7 +361,7 @@ export function apply(ctx: Context, config?: Config): void {
       },
       language: () => liveSettings.get().settings.language,
     }),
-    'dsh-memoir: auto-distill',
+    'dsh-memoir-sqlite: auto-distill',
   )
 
   ctx.effect(() => {
@@ -361,10 +375,10 @@ export function apply(ctx: Context, config?: Config): void {
     snapshotManager.resize(settings.sessionSnapshotMax)
     retrieval.resizeCache(settings.queryCacheSize)
     })
-  }, 'dsh-memoir: live settings effects')
+  }, 'dsh-memoir-sqlite: live settings effects')
 
   ctx.effect(() => ctx.systemPrompt.section({
-    name: 'plugin:dsh-memoir',
+    name: 'plugin:dsh-memoir-sqlite',
     order: SECTION_ORDER,
     // Always observe the trusted assembly cwd for Web write authorization.
     // When announcement is disabled, the provider returns no prompt content.
@@ -379,6 +393,5 @@ export function apply(ctx: Context, config?: Config): void {
         hardMaxTokens: current.hotMemoryMaxTokens,
       }, current.language)
     },
-  }), 'dsh-memoir: live prompt section')
+  }), 'dsh-memoir-sqlite: live prompt section')
 }
-

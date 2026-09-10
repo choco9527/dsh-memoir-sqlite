@@ -1,10 +1,10 @@
 /**
- * dsh-memoir — host half.
+ * dsh-memoir-sqlite — host half.
  *
  * 把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为项目持久化记忆，
  * 并作为未来 AGENTS 的行动指南：
  *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
- *   - 全局索引：~/.dsh/dsh-memoir.json（结构化源数据，跨项目检索）
+ *   - 结构化存储：$DSH_HOME/dsh-memoir-sqlite/memory.db（SQLite）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
  *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
  *
@@ -33,6 +33,8 @@ export declare const inject: string[];
 export interface Config {
     /** Master switch for the plugin (tools, routes, prompt section). */
     enabled?: boolean;
+    /** Register the optional per-conversation Memory view (default true). */
+    showConversationView?: boolean;
     /** Language for agent-facing prompts, tools, results, and errors. */
     language?: MemoirLanguage;
     /** When true (default), a system-prompt section announces the plugin. */
@@ -72,6 +74,7 @@ export declare const MEMOIR_SECTION_HEADING: string;
 /** Resolved runtime switches (schema defaults applied). */
 export interface ResolvedConfig {
     enabled: boolean;
+    showConversationView: boolean;
     language: MemoirLanguage;
     announceToAgent: boolean;
     autoDistill: boolean;

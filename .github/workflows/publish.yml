@@ -23,7 +23,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.17.1
+          version: 11.10.0
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -128,7 +128,7 @@ jobs:
           gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "dsh-memoir $RELEASE_TAG" \
+            --title "dsh-memoir-sqlite $RELEASE_TAG" \
             --latest \
             --notes-file "$notes_file" \
             release-assets/*.tgz

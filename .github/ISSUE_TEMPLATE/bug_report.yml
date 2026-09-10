@@ -8,7 +8,7 @@ body:
       value: |
         请保持本模板完整并填写所有必填部分。缺少截图 / 日志证据、冒烟测试、代码引用或补丁的 Bug 报告将被自动关闭。
 
-        提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues?q=is%3Aissue)
+        提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/choco9527/dsh-memoir-sqlite/issues?q=is%3Aissue)
   - type: checkboxes
     id: duplicate-check
     attributes:
@@ -79,9 +79,9 @@ body:
       placeholder: |
         - DSH 版本:
         - 浏览器:
-        - dsh-memoir 版本 / 安装方式（github: / file:）:
+        - dsh-memoir-sqlite 版本 / 安装方式（github: / file:）:
         - 操作系统:
-        - ~/.dsh/dsh-memoir.json 规模（条数 / 项目数，如相关）:
+        - $DSH_HOME/dsh-memoir-sqlite/memory.db 规模（条数 / 项目数，如相关）:
     validations:
       required: true
   - type: textarea
@@ -98,7 +98,7 @@ body:
       label: 冒烟测试
       description: 说明你实际执行过的验证：按复现步骤在具体 DSH / 插件版本上的操作与观察结果、执行过的构建或命令（如 pnpm run build / pnpm test）、对照实验。未实际验证的描述视为无效。
       placeholder: |
-        - 环境（DSH / dsh-memoir 版本）:
+        - 环境（DSH / dsh-memoir-sqlite 版本）:
         - 执行步骤与观察结果:
         - 对照 / 历史版本差异:
     validations:
@@ -110,7 +110,7 @@ body:
       description: 指向仓库内相关代码的精确位置（文件路径 + 函数 / 行号，可附 GitHub 链接），便于维护者定位。
       placeholder: |
         src/host/store.ts:120-135
-        https://github.com/Qinling-Melon-Farmers/dsh-memoir/blob/main/src/host/store.ts#L120-L135
+        https://github.com/choco9527/dsh-memoir-sqlite/blob/main/src/host/store.ts
     validations:
       required: true
   - type: textarea

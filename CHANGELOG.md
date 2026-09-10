@@ -1,16 +1,36 @@
 # Changelog
 
-本文件记录 dsh-memoir 每个已发布版本的主要变化。历史版本条目依据对应 Git tag、release 注释和版本提交整理。
+本文件记录 dsh-memoir-sqlite 的变化。0.6.1 及更早条目继承自上游 dsh-memoir，仅用于说明 Fork 基线。
 
 ## [Unreleased]
 
 ### 中文
 
-- 暂无。
+- 自动沉淀改为精选长期记忆：系统提示、收尾提醒和写入工具共用收录规则，不再鼓励任务流水账；不确定就不写，用户明确要求记录的范围仍保留。
+- 中英文说明及设置提示同步更新；保留提醒频率、分类、数据库结构和全部已有记忆。
 
 ### English
 
-- None.
+- Curate long-term memory through a shared admission policy across system guidance, turn-end reminders, and the write tool; skip uncertain candidates and routine task logs while honoring explicit user requests.
+- Update bilingual documentation and settings guidance without changing cadence, categories, the database schema, or existing memory.
+
+## [0.1.0] - 2026-09-04
+
+### 中文
+
+- Fork `dsh-memoir@0.6.1` 为独立的 `dsh-memoir-sqlite` 包。
+- 使用 Node 内置 `node:sqlite`、WAL 和 schema version 替换 JSON 单一事实源。
+- 新增条目版本、更新时间与增删改审计表，并保留原有中文 2/3-gram BM25 检索。
+- 默认空数据库自动导入旧 `$DSH_HOME/dsh-memoir.json`，旧文件保持不变。
+- 项目构建脚本统一为 pnpm。
+
+### English
+
+- Forked `dsh-memoir@0.6.1` into the independent `dsh-memoir-sqlite` package.
+- Replaced the JSON source of truth with built-in `node:sqlite`, WAL, and schema versioning.
+- Added entry versions, update timestamps, and mutation audit rows while retaining the CJK 2/3-gram BM25 engine.
+- Empty default databases import the legacy `$DSH_HOME/dsh-memoir.json` once without modifying it.
+- Standardized project scripts on pnpm.
 
 ## [0.6.1] - 2026-09-02
 
@@ -457,7 +477,8 @@
 - Removed duplicate project-memory writes.
 - Added length bounds to read output, prompt text, and tool text to prevent unbounded growth.
 
-[Unreleased]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/choco9527/dsh-memoir-sqlite/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/choco9527/dsh-memoir-sqlite/releases/tag/v0.1.0
 [0.6.1]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1
 [0.6.0]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.0
 [0.5.6]: https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.5.6

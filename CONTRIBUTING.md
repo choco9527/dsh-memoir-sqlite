@@ -1,6 +1,6 @@
 # 贡献指南（Contributing）
 
-欢迎为 dsh-memoir（DeepSeek Harness 本地项目记忆层插件）贡献代码。本文件是贡献者
+欢迎为 dsh-memoir-sqlite（DeepSeek Harness SQLite 项目记忆插件）贡献代码。本文件是贡献者
 入口；PR / Issue 的模板与自动化规则以本文档、[.github/pull_request_template.md](.github/pull_request_template.md)
 与 [ISSUE_TRIAGE.md](ISSUE_TRIAGE.md) 为准。
 
@@ -13,7 +13,7 @@
 - **维护 / 重构**：测试、构建与工程化改进。
 
 暂**不接受**全新特性 / 新功能的 PR；有相关需求请先在
-[Issues](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues) 提 issue 讨论，
+[Issues](https://github.com/choco9527/dsh-memoir-sqlite/issues) 提 issue 讨论，
 确认后按路线图排期（例如 issue #1 的 update / supersede 已纳入 v0.5.0 计划）。
 
 **不接受仅文档类 PR**（标题以 `docs:` 开头或勾选「仅文档」类型），会被自动
@@ -31,8 +31,8 @@
 ## 快速开始
 
 ```sh
-git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
+git clone https://github.com/choco9527/dsh-memoir-sqlite.git
+cd dsh-memoir-sqlite
 pnpm install
 pnpm run build
 pnpm run typecheck && pnpm test   # 提交前必过

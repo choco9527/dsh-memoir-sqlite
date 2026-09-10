@@ -73,7 +73,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.registeredRoutes[0]?.path, '/api/dsh-memoir')
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.sections[0]?.name, 'plugin:dsh-memoir')
+  assert.equal(ctx.sections[0]?.name, 'plugin:dsh-memoir-sqlite')
   assert.equal(ctx.sections[0]?.order, 150)
   assert.equal(typeof ctx.sections[0]?.text, 'function')
   assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping'])
@@ -86,6 +86,17 @@ test('apply with enabled=false mounts nothing', () => {
   assert.equal(ctx.registeredRoutes.length, 0)
   assert.equal(ctx.sections.length, 0)
   assert.equal(ctx.listeners.length, 0)
+})
+
+test('apply exposes the deployment-owned Conversation view visibility', async () => {
+  const ctx = makeCtx()
+  applyTest(ctx, { showConversationView: false })
+  const route = ctx.registeredRoutes[0]
+  assert.ok(route)
+
+  const result = await callRoute(route.handler, { url: '/api/dsh-memoir/ui-config' })
+  assert.equal(result.status, 200)
+  assert.deepEqual(result.envelope.value, { showConversationView: false })
 })
 
 test('apply with announceToAgent=false keeps workspace tracking but emits no prompt content', () => {
@@ -128,6 +139,8 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
   const ctx = makeCtx()
   applyTest(ctx, { language: 'zh' })
   assert.match(ctx.registeredTools[0]!.description, /记忆/)
+  assert.match(ctx.registeredTools[0]!.description, /精选长期记忆/)
+  assert.match((ctx.sections[0]!.text as (context: unknown) => string)({}), /不确定.*不写/)
 
   const updated = await callRoute(ctx.registeredRoutes[0]!.handler, {
     method: 'PUT',
@@ -138,10 +151,12 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
   assert.equal(updated.status, 200)
   assert.equal(ctx.registeredTools.length, 6, 'the three tool schemas are registered again in the new language')
   assert.match(ctx.registeredTools[3]!.description, /Persist one project-memory entry/)
+  assert.match(ctx.registeredTools[3]!.description, /curated long-term memory/)
   assert.doesNotMatch(ctx.registeredTools[3]!.description, /[\u3400-\u9fff]/u)
 
   const provider = ctx.sections[0]!.text as (context: unknown) => string
   assert.match(provider({}), /persistent project memory/i)
+  assert.match(provider({}), /explicitly asks to remember/)
   assert.doesNotMatch(provider({}), /[\u3400-\u9fff]/u)
 
   const messages: Array<{ content?: Array<{ text?: string }> }> = []
@@ -155,6 +170,8 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
     signal: new AbortController().signal,
   })
   assert.match(messages[0]!.content![0]!.text!, /automatic wrap-up/i)
+  assert.match(messages[0]!.content![0]!.text!, /Do not automatically record task progress, Job IDs/)
+  assert.match(messages[0]!.content![0]!.text!, /with no qualified candidate, call no memory tools/)
   assert.doesNotMatch(messages[0]!.content![0]!.text!, /[\u3400-\u9fff]/u)
 })
 
@@ -370,4 +387,3 @@ test('no snapshot manager: every assembly builds fresh (compat)', () => {
     ws.cleanup()
   }
 })
-

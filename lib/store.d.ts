@@ -1,18 +1,7 @@
 /**
- * Structured memory store for dsh-memoir — the single source of truth is the
- * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
- * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
- * the same entries (git-friendly, auto-injected into future sessions). Pure
- * node:fs, no cordis dependency —
- * unit-testable with an injected path.
- *
- * v0.3.1: revision-based in-memory snapshot cache — cold start reads the file
- * once, warm reads return the snapshot without touching disk, writes bump the
- * revision and refresh the snapshot; external file changes are picked up by a
- * low-frequency mtime probe. Corrupt JSON is backed up (never silently
- * overwritten), atomic writes use unique temp names, and project keys are
- * normalized (drive-letter case + separators) so C:\A / c:\a\ / C:/A share
- * one bucket.
+ * Structured memory store for dsh-memoir-sqlite. SQLite is the source of
+ * truth; per-project PROJECT_MEMORY.md files are regenerated human-readable
+ * projections. The in-memory shape remains stable for retrieval and UI code.
  */
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
 /** Global index format version. */
@@ -51,6 +40,10 @@ export interface MemoirEntry {
     title?: string;
     content: string;
     time: number;
+    /** Last content or lifecycle update time. */
+    updatedAt?: number;
+    /** Monotonic entry revision, starting at 1. */
+    version?: number;
     source?: MemoirSource;
     importance?: number;
     pinned?: boolean;
@@ -101,11 +94,8 @@ export interface StoreSnapshot {
     epoch: number;
     /** The parsed (normalized) store file. */
     file: MemoirStoreFile;
-    /** Disk signature backing the snapshot; null when the file was absent. */
-    stat: {
-        mtimeMs: number;
-        size: number;
-    } | null;
+    /** SQLite data_version observed when the snapshot was built. */
+    dataVersion: number;
 }
 /** Cache/IO counters exposed for diagnostics and cache-hit-rate tests. */
 export interface CacheStats {
@@ -121,11 +111,11 @@ export interface CacheStats {
     misses: number;
     /** hits / loads, in [0, 1]. */
     hitRate: number;
-    /** Full file reads (parse) since construction. */
+    /** Full database snapshot reads since construction. */
     fileReads: number;
-    /** mtime stat probes issued against the store file. */
+    /** SQLite data_version probes issued against the store. */
     statProbes: number;
-    /** Corrupt store files that were backed up instead of overwritten. */
+    /** Corrupt database files preserved before recovery. */
     corruptBackups: number;
     /** renderMarkdown() calls. */
     renders: number;
@@ -136,9 +126,9 @@ export interface CacheStats {
     /** Duration of the last cold load in milliseconds. */
     lastLoadMs?: number;
 }
-/** How often (ms) warm load() calls re-probe the file mtime; 0 = every call. */
+/** How often warm load() calls probe SQLite data_version; 0 = every call. */
 export declare const DEFAULT_MTIME_CHECK_MS = 2000;
-/** Default store location: $DSH_HOME/dsh-memoir.json (fallback ~/.dsh). */
+/** Default store location under $DSH_HOME (fallback ~/.dsh). */
 export declare function defaultStorePath(): string;
 /** Cross-process mutation lock defaults (roadmap §2.2). */
 export declare const DEFAULT_LOCK_RETRY_MS = 25;
@@ -149,7 +139,7 @@ export declare const DEFAULT_LOCK_STALE_AFTER_MS = 60000;
  * (atomic O_EXCL create, no race window). Retries every retryMs until
  * timeoutMs, then throws. The lock is always released in finally — even
  * when fn throws. Used to serialize read-modify-write store mutations
- * across processes sharing one ~/.dsh/dsh-memoir.json.
+ * across processes sharing one memoir SQLite database.
  */
 export declare function withFileLock<T>(lockPath: string, fn: () => T, options?: {
     retryMs?: number;
@@ -181,9 +171,9 @@ export declare function validateEntryUpdate(payload: unknown, language?: MemoirL
  * The structured memory store.
  */
 export declare class MemoirStore {
-    /** The store file path. */
+    /** The SQLite database path. */
     readonly path: string;
-    /** How often warm load() calls re-probe the file mtime (0 = every call). */
+    /** How often warm load() calls re-probe SQLite data_version. */
     readonly mtimeCheckIntervalMs: number;
     /** Cross-process mutation lock retry interval (withFileLock). */
     readonly lockRetryMs: number;
@@ -197,13 +187,16 @@ export declare class MemoirStore {
     private revision;
     /** Snapshot-rebuild counter; bumped on every snapshot (re)build. */
     private epoch;
-    /** Timestamp of the last mtime probe (throttles external-change checks). */
+    /** Timestamp of the last data-version probe. */
     private lastMtimeCheck;
+    /** Open SQLite persistence connection. */
+    private readonly database;
+    /** Legacy JSON imported once when the default SQLite database is empty. */
+    private readonly legacyJsonPath;
     private loadCount;
     private hitCount;
     private fileReadCount;
     private statProbeCount;
-    private corruptBackupCount;
     private lastLoadMs;
     /** renderMarkdown cache: project key → { signature, markdown }. */
     private renderCache;
@@ -211,8 +204,8 @@ export declare class MemoirStore {
     private renderComputeCount;
     private readonly languageSource;
     /**
-     * @param path - store file path (defaults to the standard location).
-     * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
+     * @param path - SQLite database path (defaults to the standard location).
+     * @param options.mtimeCheckIntervalMs - data-version probe throttle; 0 probes on
      *   every load (tests), defaults to a low-frequency 2000ms.
      * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
      *   tuning (tests shrink these; defaults 25ms / 5000ms).
@@ -223,6 +216,7 @@ export declare class MemoirStore {
         lockTimeoutMs?: number;
         lockStaleAfterMs?: number;
         language?: MemoirLanguageSource;
+        legacyJsonPath?: string | false;
     });
     /** Current model-facing language (live when backed by Web settings). */
     language(): MemoirLanguage;
@@ -231,34 +225,33 @@ export declare class MemoirStore {
     /**
      * Run one read-modify-write mutation inside the cross-process lock.
      * Inside the critical section the in-memory snapshot is dropped and the
-     * store is re-read from disk, so a process whose snapshot went stale
-     * mutates the latest on-disk state (no lost update between processes).
+     * store is re-read from SQLite, so a process whose snapshot went stale
+     * mutates the latest committed state.
      */
     private mutateLocked;
     /** Current store revision (0 before the first load/save). */
     currentRevision(): number;
-    /** Stat the store file into the snapshot signature (null when absent). */
-    private statNow;
     /**
-     * Load and normalize the store.
-     *
-     * Revision-based snapshot cache: the first call of a process reads and
-     * parses the file; every later call returns the in-memory snapshot without
-     * touching disk. External file changes (another dsh process) are picked up
-     * by a low-frequency mtime probe (mtimeCheckIntervalMs). Absence is
-     * negatively cached the same way. Corrupt JSON is renamed to a
-     * `.corrupt.<timestamp>` backup before the store starts fresh.
+     * Load the relational store into the stable structured representation.
+     * Warm reads use the in-memory snapshot; throttled PRAGMA data_version
+     * probes detect commits made by another DSH process.
      */
     load(): MemoirStoreFile;
     /** Normalize a parsed store file: mint ids, coerce shapes, merge duplicate
      *  buckets that normalize to the same project key (legacy Windows variants). */
     private normalize;
-    /** Persist the store atomically (0600 — may contain user's notes). */
+    /** Parse and normalize one legacy dsh-memoir JSON store. */
+    private readLegacyJson;
+    /** Import a legacy JSON store and merge entries by id. */
+    importLegacyJson(path: string): number;
+    /** Persist the store in one SQLite transaction. */
     save(file: MemoirStoreFile): void;
     /** Drop the snapshot so the next load() re-reads and re-parses the file. */
     invalidate(): void;
     /** Cache/IO counters (diagnostics + tests). */
     stats(): CacheStats;
+    /** Close the SQLite connection. */
+    close(): void;
     /** One project record, or undefined. */
     project(cwd: string): MemoirProject | undefined;
     /** Entries of one project in insertion order. */

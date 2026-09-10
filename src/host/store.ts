@@ -1,26 +1,16 @@
 /**
- * Structured memory store for dsh-memoir — the single source of truth is the
- * global index JSON ($DSH_HOME/dsh-memoir.json, defaulting to ~/.dsh); the
- * per-project PROJECT_MEMORY.md is a regenerated human-readable rendering of
- * the same entries (git-friendly, auto-injected into future sessions). Pure
- * node:fs, no cordis dependency —
- * unit-testable with an injected path.
- *
- * v0.3.1: revision-based in-memory snapshot cache — cold start reads the file
- * once, warm reads return the snapshot without touching disk, writes bump the
- * revision and refresh the snapshot; external file changes are picked up by a
- * low-frequency mtime probe. Corrupt JSON is backed up (never silently
- * overwritten), atomic writes use unique temp names, and project keys are
- * normalized (drive-letter case + separators) so C:\A / c:\a\ / C:/A share
- * one bucket.
+ * Structured memory store for dsh-memoir-sqlite. SQLite is the source of
+ * truth; per-project PROJECT_MEMORY.md files are regenerated human-readable
+ * projections. The in-memory shape remains stable for retrieval and UI code.
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { resolveDshHome } from './dsh-home.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
+import { SqliteMemoirDatabase } from './sqlite-store.js'
 
 /** Global index format version. */
 export const FORMAT_VERSION = 4
@@ -68,6 +58,10 @@ export interface MemoirEntry {
   title?: string
   content: string
   time: number
+  /** Last content or lifecycle update time. */
+  updatedAt?: number
+  /** Monotonic entry revision, starting at 1. */
+  version?: number
   source?: MemoirSource
   // Optional in the TypeScript shape for source compatibility with legacy
   // callers; normalize() materializes these fields before persistence.
@@ -125,8 +119,8 @@ export interface StoreSnapshot {
   epoch: number
   /** The parsed (normalized) store file. */
   file: MemoirStoreFile
-  /** Disk signature backing the snapshot; null when the file was absent. */
-  stat: { mtimeMs: number; size: number } | null
+  /** SQLite data_version observed when the snapshot was built. */
+  dataVersion: number
 }
 
 /** Cache/IO counters exposed for diagnostics and cache-hit-rate tests. */
@@ -143,11 +137,11 @@ export interface CacheStats {
   misses: number
   /** hits / loads, in [0, 1]. */
   hitRate: number
-  /** Full file reads (parse) since construction. */
+  /** Full database snapshot reads since construction. */
   fileReads: number
-  /** mtime stat probes issued against the store file. */
+  /** SQLite data_version probes issued against the store. */
   statProbes: number
-  /** Corrupt store files that were backed up instead of overwritten. */
+  /** Corrupt database files preserved before recovery. */
   corruptBackups: number
   /** renderMarkdown() calls. */
   renders: number
@@ -159,12 +153,12 @@ export interface CacheStats {
   lastLoadMs?: number
 }
 
-/** How often (ms) warm load() calls re-probe the file mtime; 0 = every call. */
+/** How often warm load() calls probe SQLite data_version; 0 = every call. */
 export const DEFAULT_MTIME_CHECK_MS = 2000
 
-/** Default store location: $DSH_HOME/dsh-memoir.json (fallback ~/.dsh). */
+/** Default store location under $DSH_HOME (fallback ~/.dsh). */
 export function defaultStorePath(): string {
-  return join(resolveDshHome(), 'dsh-memoir.json')
+  return join(resolveDshHome(), 'dsh-memoir-sqlite', 'memory.db')
 }
 
 /** Cross-process mutation lock defaults (roadmap §2.2). */
@@ -183,7 +177,7 @@ function sleepSync(ms: number): void {
  * (atomic O_EXCL create, no race window). Retries every retryMs until
  * timeoutMs, then throws. The lock is always released in finally — even
  * when fn throws. Used to serialize read-modify-write store mutations
- * across processes sharing one ~/.dsh/dsh-memoir.json.
+ * across processes sharing one memoir SQLite database.
  */
 export function withFileLock<T>(
   lockPath: string,
@@ -405,10 +399,10 @@ function normalizedSource(value: unknown, legacySessionId?: unknown): MemoirSour
  * The structured memory store.
  */
 export class MemoirStore {
-  /** The store file path. */
+  /** The SQLite database path. */
   readonly path: string
 
-  /** How often warm load() calls re-probe the file mtime (0 = every call). */
+  /** How often warm load() calls re-probe SQLite data_version. */
   readonly mtimeCheckIntervalMs: number
 
   /** Cross-process mutation lock retry interval (withFileLock). */
@@ -425,15 +419,18 @@ export class MemoirStore {
   private revision = 0
   /** Snapshot-rebuild counter; bumped on every snapshot (re)build. */
   private epoch = 0
-  /** Timestamp of the last mtime probe (throttles external-change checks). */
+  /** Timestamp of the last data-version probe. */
   private lastMtimeCheck = 0
+  /** Open SQLite persistence connection. */
+  private readonly database: SqliteMemoirDatabase
+  /** Legacy JSON imported once when the default SQLite database is empty. */
+  private readonly legacyJsonPath: string | undefined
 
   // IO / cache counters (diagnostics + tests).
   private loadCount = 0
   private hitCount = 0
   private fileReadCount = 0
   private statProbeCount = 0
-  private corruptBackupCount = 0
   private lastLoadMs: number | undefined
 
   /** renderMarkdown cache: project key → { signature, markdown }. */
@@ -443,19 +440,23 @@ export class MemoirStore {
   private readonly languageSource: MemoirLanguageSource
 
   /**
-   * @param path - store file path (defaults to the standard location).
-   * @param options.mtimeCheckIntervalMs - mtime probe throttle; 0 probes on
+   * @param path - SQLite database path (defaults to the standard location).
+   * @param options.mtimeCheckIntervalMs - data-version probe throttle; 0 probes on
    *   every load (tests), defaults to a low-frequency 2000ms.
    * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
    *   tuning (tests shrink these; defaults 25ms / 5000ms).
    */
-  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number; language?: MemoirLanguageSource }) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number; language?: MemoirLanguageSource; legacyJsonPath?: string | false }) {
     this.path = path ?? defaultStorePath()
     this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
     this.lockRetryMs = options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS
     this.lockTimeoutMs = options?.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS
     this.lockStaleAfterMs = options?.lockStaleAfterMs ?? DEFAULT_LOCK_STALE_AFTER_MS
     this.languageSource = options?.language ?? DEFAULT_MEMOIR_LANGUAGE
+    this.legacyJsonPath = options?.legacyJsonPath === false
+      ? undefined
+      : options?.legacyJsonPath ?? (path === undefined ? join(resolveDshHome(), 'dsh-memoir.json') : undefined)
+    this.database = new SqliteMemoirDatabase(this.path)
   }
 
   /** Current model-facing language (live when backed by Web settings). */
@@ -465,14 +466,14 @@ export class MemoirStore {
 
   /** The cross-process lock file guarding mutations of this store. */
   private lockFilePath(): string {
-    return this.path.replace(/\.json$/, '') + '.lock'
+    return this.path + '.lock'
   }
 
   /**
    * Run one read-modify-write mutation inside the cross-process lock.
    * Inside the critical section the in-memory snapshot is dropped and the
-   * store is re-read from disk, so a process whose snapshot went stale
-   * mutates the latest on-disk state (no lost update between processes).
+   * store is re-read from SQLite, so a process whose snapshot went stale
+   * mutates the latest committed state.
    */
   private mutateLocked<T>(mutate: () => T): T {
     const lockPath = this.lockFilePath()
@@ -493,81 +494,49 @@ export class MemoirStore {
     return this.revision
   }
 
-  /** Stat the store file into the snapshot signature (null when absent). */
-  private statNow(): { mtimeMs: number; size: number } | null {
-    try {
-      const s = statSync(this.path)
-      return { mtimeMs: s.mtimeMs, size: s.size }
-    } catch {
-      return null
-    }
-  }
-
   /**
-   * Load and normalize the store.
-   *
-   * Revision-based snapshot cache: the first call of a process reads and
-   * parses the file; every later call returns the in-memory snapshot without
-   * touching disk. External file changes (another dsh process) are picked up
-   * by a low-frequency mtime probe (mtimeCheckIntervalMs). Absence is
-   * negatively cached the same way. Corrupt JSON is renamed to a
-   * `.corrupt.<timestamp>` backup before the store starts fresh.
+   * Load the relational store into the stable structured representation.
+   * Warm reads use the in-memory snapshot; throttled PRAGMA data_version
+   * probes detect commits made by another DSH process.
    */
   load(): MemoirStoreFile {
     this.loadCount++
     const started = Date.now()
 
-    // Warm path: serve the snapshot directly; probe mtime only at the
-    // configured frequency (or every call when the interval is 0).
     if (this.snapshot !== null) {
       const now = Date.now()
       if (this.mtimeCheckIntervalMs === 0 || now - this.lastMtimeCheck >= this.mtimeCheckIntervalMs) {
         this.lastMtimeCheck = now
         this.statProbeCount++
-        const stat = this.statNow()
-        const same =
-          this.snapshot.stat === null
-            ? stat === null
-            : stat !== null && stat.mtimeMs === this.snapshot.stat.mtimeMs && stat.size === this.snapshot.stat.size
-        if (same) {
+        if (this.database.dataVersion() === this.snapshot.dataVersion) {
           this.hitCount++
           return this.snapshot.file
         }
-        // File changed underneath us: fall through to a rebuild.
       } else {
         this.hitCount++
         return this.snapshot.file
       }
     }
 
-    // Cold path: stat + read + parse (+ corrupt backup) + normalize.
-    let stat = this.statNow()
-    let parsed: Partial<MemoirStoreFile> = { version: FORMAT_VERSION, projects: {} }
-    if (stat !== null) {
-      try {
-        const raw: unknown = JSON.parse(readFileSync(this.path, 'utf8'))
-        if (typeof raw === 'object' && raw !== null && typeof (raw as MemoirStoreFile).projects === 'object' && (raw as MemoirStoreFile).projects !== null) {
-          parsed = raw as Partial<MemoirStoreFile>
-        } else {
-          throw new Error('store shape invalid')
-        }
-      } catch {
-        // Corrupt store: preserve it as a backup, then start fresh (the
-        // project markdown files remain as human-readable history).
-        this.corruptBackupCount++
-        try {
-          renameSync(this.path, `${this.path}.corrupt.${Date.now()}`)
-          stat = null
-        } catch {
-          // Backup failed (permissions?): keep serving fresh in-memory; the
-          // next save will still overwrite the corrupt file.
-        }
-      }
-      this.fileReadCount++
+    let file = this.normalize(this.database.read(FORMAT_VERSION))
+    this.fileReadCount++
+    if (
+      Object.keys(file.projects).length === 0 &&
+      this.legacyJsonPath !== undefined &&
+      existsSync(this.legacyJsonPath) &&
+      this.database.metadata('legacy_json_imported') === undefined
+    ) {
+      file = this.readLegacyJson(this.legacyJsonPath)
+      this.database.replace(file)
+      this.database.setMetadata('legacy_json_imported', this.legacyJsonPath)
     }
-    const file = this.normalize(parsed)
     this.epoch++
-    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat }
+    this.snapshot = {
+      revision: this.revision,
+      epoch: this.epoch,
+      file,
+      dataVersion: this.database.dataVersion(),
+    }
     this.lastMtimeCheck = Date.now()
     this.lastLoadMs = Date.now() - started
     // Entry shapes may have changed underneath us: drop the render cache.
@@ -594,6 +563,10 @@ export class MemoirStore {
               ...(typeof e.title === 'string' && e.title !== '' ? { title: e.title } : {}),
               content: typeof e.content === 'string' ? e.content : '',
               time: typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now(),
+              updatedAt: typeof e.updatedAt === 'number' && Number.isFinite(e.updatedAt)
+                ? e.updatedAt
+                : (typeof e.time === 'number' && Number.isFinite(e.time) ? e.time : Date.now()),
+              version: Number.isSafeInteger(e.version) && (e.version as number) >= 1 ? e.version as number : 1,
               ...(normalizedSource(e.source, e.sessionId) !== undefined ? { source: normalizedSource(e.source, e.sessionId) } : {}),
               importance: normalizedImportance(e.importance),
               pinned: e.pinned === true,
@@ -622,21 +595,57 @@ export class MemoirStore {
     return { version: FORMAT_VERSION, projects }
   }
 
-  /** Persist the store atomically (0600 — may contain user's notes). */
+  /** Parse and normalize one legacy dsh-memoir JSON store. */
+  private readLegacyJson(path: string): MemoirStoreFile {
+    const raw: unknown = JSON.parse(readFileSync(path, 'utf8'))
+    if (typeof raw !== 'object' || raw === null || typeof (raw as MemoirStoreFile).projects !== 'object' || (raw as MemoirStoreFile).projects === null) {
+      throw new Error(`dsh-memoir-sqlite: legacy store has an invalid shape (${path})`)
+    }
+    return this.normalize(raw as Partial<MemoirStoreFile>)
+  }
+
+  /** Import a legacy JSON store and merge entries by id. */
+  importLegacyJson(path: string): number {
+    const incoming = this.readLegacyJson(path)
+    const current = this.normalize(this.database.read(FORMAT_VERSION))
+    let imported = 0
+    const projects: MemoirStoreFile['projects'] = Object.fromEntries(
+      Object.entries(current.projects).map(([key, project]) => [key, { ...project, entries: [...project.entries] }]),
+    )
+    for (const [key, project] of Object.entries(incoming.projects)) {
+      const existing = projects[key]
+      if (existing === undefined) {
+        projects[key] = { ...project, entries: [...project.entries] }
+        imported += project.entries.length
+        continue
+      }
+      const ids = new Set(existing.entries.map((entry) => entry.id))
+      const additions = project.entries.filter((entry) => !ids.has(entry.id))
+      existing.entries = [...existing.entries, ...additions]
+      existing.updatedAt = Math.max(existing.updatedAt, project.updatedAt)
+      imported += additions.length
+    }
+    this.save({ version: FORMAT_VERSION, projects })
+    this.database.setMetadata('legacy_json_imported', path)
+    return imported
+  }
+
+  /** Persist the store in one SQLite transaction. */
   save(file: MemoirStoreFile): void {
     try {
-      writeFileAtomic(this.path, JSON.stringify(file, null, 2) + '\n', 0o600)
+      this.database.replace(file)
     } catch (error) {
-      // The in-memory snapshot may already carry the mutation; drop it so the
-      // next load() re-reads the on-disk truth instead of serving a stale hit.
       this.snapshot = null
       throw error
     }
-    // Bump the revision and refresh the snapshot signature from the file we
-    // just wrote: subsequent reads hit the cache without re-parsing.
     this.revision++
     this.epoch++
-    this.snapshot = { revision: this.revision, epoch: this.epoch, file, stat: this.statNow() }
+    this.snapshot = {
+      revision: this.revision,
+      epoch: this.epoch,
+      file,
+      dataVersion: this.database.dataVersion(),
+    }
     this.lastMtimeCheck = Date.now()
     // Entry shapes changed under a mutation: drop all render-cache entries.
     this.renderCache.clear()
@@ -659,12 +668,17 @@ export class MemoirStore {
       hitRate: this.loadCount === 0 ? 0 : this.hitCount / this.loadCount,
       fileReads: this.fileReadCount,
       statProbes: this.statProbeCount,
-      corruptBackups: this.corruptBackupCount,
+      corruptBackups: this.database.corruptBackups(),
       renders: this.renderCount,
       renderComputes: this.renderComputeCount,
       renderHitRate: this.renderCount === 0 ? 0 : (this.renderCount - this.renderComputeCount) / this.renderCount,
       lastLoadMs: this.lastLoadMs,
     }
+  }
+
+  /** Close the SQLite connection. */
+  close(): void {
+    this.database.close()
   }
 
   /** One project record, or undefined. */
@@ -708,12 +722,15 @@ export class MemoirStore {
         typeof source === 'object' && source !== null ? source : undefined,
         typeof source === 'string' ? source : undefined,
       )
+      const time = Date.now()
       const entry: MemoirEntry = {
         id: mintId(),
         section: payload.section,
         ...(typeof payload.title === 'string' && payload.title.trim() !== '' ? { title: payload.title.trim() } : {}),
         content: payload.content.trim(),
-        time: Date.now(),
+        time,
+        updatedAt: time,
+        version: 1,
         ...(normalizedOrigin !== undefined ? { source: normalizedOrigin } : {}),
         importance: normalizedImportance(payload.importance),
         pinned: payload.pinned === true,
@@ -724,7 +741,11 @@ export class MemoirStore {
       const superseded = new Set(entry.supersedes ?? [])
       if (superseded.size > 0) {
         for (const existing of project.entries) {
-          if (superseded.has(existing.id)) existing.status = 'superseded'
+          if (superseded.has(existing.id)) {
+            existing.status = 'superseded'
+            existing.updatedAt = time
+            existing.version = (existing.version ?? 1) + 1
+          }
         }
       }
       project.entries.push(entry)
@@ -759,6 +780,7 @@ export class MemoirStore {
       const project = store.projects[projectKey(cwd)]
       const entry = project?.entries.find((candidate) => candidate.id === id)
       if (entry === undefined) return undefined
+      const updatedAt = Date.now()
       if (patch.section !== undefined) entry.section = patch.section
       if (patch.title !== undefined) {
         const title = patch.title?.trim() ?? ''
@@ -776,7 +798,11 @@ export class MemoirStore {
           entry.supersedes = supersedes
           const targets = new Set(supersedes)
           for (const candidate of project.entries) {
-            if (candidate.id !== entry.id && targets.has(candidate.id)) candidate.status = 'superseded'
+            if (candidate.id !== entry.id && targets.has(candidate.id)) {
+              candidate.status = 'superseded'
+              candidate.updatedAt = updatedAt
+              candidate.version = (candidate.version ?? 1) + 1
+            }
           }
         }
       }
@@ -785,7 +811,9 @@ export class MemoirStore {
         if (tags === undefined) delete entry.tags
         else entry.tags = tags
       }
-      project.updatedAt = Date.now()
+      entry.updatedAt = updatedAt
+      entry.version = (entry.version ?? 1) + 1
+      project.updatedAt = updatedAt
       this.save(store)
       this.writeProjectFile(cwd)
       return entry

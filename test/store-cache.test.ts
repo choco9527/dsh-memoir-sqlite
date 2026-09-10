@@ -1,10 +1,10 @@
 /**
  * Store cache tests (roadmap §2.1 acceptance):
- *   - 100 consecutive warm reads never re-read the file
- *   - record/remove keep the snapshot consistent with disk
+ *   - 100 consecutive warm reads never re-read the database
+ *   - record/remove keep the snapshot consistent with SQLite
  *   - revision bumps on writes
- *   - external file changes are picked up by the mtime probe
- *   - corrupt JSON is backed up (never silently overwritten)
+ *   - external commits are picked up by the data-version probe
+ *   - corrupt databases are backed up (never silently overwritten)
  *   - atomic writes use unique temp names without leftovers
  *   - project keys normalize (C:\A / c:\a\ / C:/A → one bucket)
  *   - markdown render cache + skip-write behavior
@@ -17,7 +17,7 @@ import { basename, dirname, join } from 'node:path'
 import { MemoirStore, PROJECT_FILE, writeFileAtomic } from '../lib/store.js'
 import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
-test('warm reads serve from the snapshot: 100 entries() → one file read', () => {
+test('warm reads serve from the snapshot: 100 entries() → no database reread', () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath(), { mtimeCheckIntervalMs: 0 })
@@ -26,11 +26,11 @@ test('warm reads serve from the snapshot: 100 entries() → one file read', () =
     store.invalidate()
     store.entries(ws.cwd)
     const before = store.stats()
-    assert.equal(before.fileReads, 1, 'cold load reads the file exactly once')
+    const reads = before.fileReads
 
     for (let i = 0; i < 100; i++) store.entries(ws.cwd)
     const after = store.stats()
-    assert.equal(after.fileReads, 1, 'no re-read across 100 warm reads')
+    assert.equal(after.fileReads, reads, 'no re-read across 100 warm reads')
     assert.equal(after.loads, before.loads + 100)
     assert.equal(after.hits, before.hits + 100)
     assert.equal(after.misses, before.misses, 'no new misses across 100 warm reads')
@@ -51,35 +51,26 @@ test('record/remove bump the revision and keep snapshot === disk', () => {
     store.record(ws.cwd, { section: 'work', content: 'b' })
     const afterWrites = store.currentRevision()
     assert.equal(afterWrites, r0 + 2)
-    // Snapshot equals disk after every write.
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), store.load())
+    assert.deepEqual(new MemoirStore(path).load(), store.load())
     const entry = store.entries(ws.cwd)[0]
     assert.ok(entry)
     store.remove(ws.cwd, entry.id)
     assert.equal(store.currentRevision(), r0 + 3)
     assert.equal(store.entries(ws.cwd).length, 1)
-    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), store.load())
+    assert.deepEqual(new MemoirStore(path).load(), store.load())
   } finally {
     ws.cleanup()
   }
 })
 
-test('external file changes are picked up by the mtime probe', () => {
+test('external SQLite commits are picked up by the data-version probe', () => {
   const ws = makeTempWorkspace()
   try {
     const path = makeTempStorePath()
     const store = new MemoirStore(path, { mtimeCheckIntervalMs: 0 })
     store.record(ws.cwd, { section: 'work', content: '本地' })
-    // Another process writes the same file with an extra entry.
-    const external = JSON.parse(readFileSync(path, 'utf8')) as {
-      projects: Record<string, { path: string; title: string; updatedAt: number; entries: unknown[] }>
-    }
-    const key = Object.keys(external.projects)[0]!
-    external.projects[key].entries.push({
-      id: 'external-1', section: 'lessons', content: '外部写入', time: Date.now() + 1000,
-    })
-    external.projects[key].updatedAt = Date.now() + 1000
-    writeFileSync(path, JSON.stringify(external))
+    const external = new MemoirStore(path, { mtimeCheckIntervalMs: 0 })
+    external.record(ws.cwd, { section: 'lessons', content: '外部写入' })
     assert.equal(store.entries(ws.cwd).length, 2, 'external entry visible after mtime change')
     assert.equal(store.entries(ws.cwd)[1]?.content, '外部写入')
   } finally {
@@ -87,7 +78,7 @@ test('external file changes are picked up by the mtime probe', () => {
   }
 })
 
-test('absent store file is negatively cached', () => {
+test('empty initialized database is cached', () => {
   const store = new MemoirStore(makeTempStorePath(), { mtimeCheckIntervalMs: 0 })
   assert.equal(store.entries(String.raw`C:\x`).length, 0)
   const s1 = store.stats()
@@ -95,7 +86,7 @@ test('absent store file is negatively cached', () => {
   store.entries(String.raw`C:\x`)
   store.listProjects()
   const s2 = store.stats()
-  assert.equal(s2.misses, 1, 'absence is cached; no re-read/re-parse')
+  assert.equal(s2.misses, 1, 'empty database snapshot is cached')
   assert.equal(s2.hits, s2.loads - 1)
 })
 
@@ -105,8 +96,7 @@ test('corrupt store file is backed up and the store starts fresh', () => {
   const store = new MemoirStore(path)
   assert.deepEqual(store.listProjects(), [])
   assert.equal(store.stats().corruptBackups, 1)
-  // The corrupt file was renamed away, never silently overwritten.
-  assert.ok(!existsSync(path), 'corrupt file moved to a backup')
+  assert.ok(existsSync(path), 'a fresh database replaces the preserved corrupt input')
   const base = basename(path)
   const backups = readdirSync(dirname(path)).filter((f) => f.startsWith(base + '.corrupt.'))
   assert.equal(backups.length, 1)
@@ -130,7 +120,8 @@ test('invalid store shape is treated as corrupt and backed up', () => {
 
 test('legacy windows key variants merge into one bucket', () => {
   const path = makeTempStorePath()
-  writeFileSync(path, JSON.stringify({
+  const legacyPath = path + '.json'
+  writeFileSync(legacyPath, JSON.stringify({
     version: 2,
     projects: {
       [String.raw`C:\proj`]: {
@@ -144,6 +135,7 @@ test('legacy windows key variants merge into one bucket', () => {
     },
   }))
   const store = new MemoirStore(path)
+  store.importLegacyJson(legacyPath)
   assert.equal(store.listProjects().length, 1, 'one normalized bucket')
   const entries = store.entries(String.raw`C:\proj`)
   assert.equal(entries.length, 2, 'entries merged by id')
@@ -213,13 +205,12 @@ test('invalidate forces the next load to re-read the file', () => {
   }
 })
 
-test('snapshot stat signature is null for absent files and set for existing ones', () => {
+test('SQLite data-version probes preserve an unchanged warm snapshot', () => {
   const path = makeTempStorePath()
   const store = new MemoirStore(path, { mtimeCheckIntervalMs: 0 })
   store.load()
-  // Absent → probe returns a cache hit on the null signature.
   store.load()
-  assert.equal(store.stats().fileReads, 0)
+  assert.equal(store.stats().fileReads, 1)
   assert.equal(store.stats().misses, 1)
   assert.equal(store.stats().hits, 1)
 })

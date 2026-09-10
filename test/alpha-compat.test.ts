@@ -17,15 +17,15 @@ const packageJson = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'))
   dependencies?: Record<string, string>
 }
 
-test('v0.6.1 retains the published DSH alpha.2 compatibility floor', () => {
-  assert.equal(packageJson.version, '0.6.1')
+test('the SQLite fork retains the DSH alpha.2 compatibility floor', () => {
+  assert.equal(packageJson.version, '0.1.0')
   assert.equal(packageJson.dsh?.engines?.dsh, '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-llm'], '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.peerDependencies?.['@deepseek-ai/dsh-tools'], '>=0.1.2-alpha.2 <0.1.3')
   assert.equal(packageJson.dependencies, undefined, 'the published package keeps zero bundled runtime dependencies')
 })
 
-test('v0.6.1 injects only native alpha client providers and compiles on the current alpha.5 baseline', () => {
+test('the SQLite fork injects only native alpha client providers and compiles on the current alpha.5 baseline', () => {
   assert.deepEqual(packageJson.dsh?.client?.inject, [
     '@deepseek-ai/dsh-api-session-controller',
     '@deepseek-ai/dsh-client-ui-renderer',

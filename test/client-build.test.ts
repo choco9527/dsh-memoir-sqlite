@@ -41,7 +41,7 @@ test('client bundle builds without errors', () => {
 test('client bundle follows the ModuleLoader closure-factory protocol', () => {
   const source = readFileSync(OUT, 'utf8')
   assert.ok(source.startsWith('window.__ModuleLoader__.load('), 'banner opens the loader handoff')
-  assert.ok(source.includes('id: "dsh-memoir"'), 'module id stamped')
+  assert.ok(source.includes('id: "dsh-memoir-sqlite"'), 'module id stamped')
   assert.ok(source.includes('factory: (require) =>'), 'factory signature present')
   assert.ok(source.trimEnd().includes('return module.exports;'), 'footer returns module.exports')
   assert.ok(source.includes('var module = { exports: {} };'), 'intro defines the module record')

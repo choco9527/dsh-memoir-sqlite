@@ -1,8 +1,8 @@
-# dsh-memoir bundle patch: inserts the host-half plugin row into the web
+# dsh-memoir-sqlite bundle patch: inserts the host-half plugin row into the web
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
-# manifest field) over dsh-base. dsh-memoir v0.6.0 targets the published DSH
+# manifest field) over dsh-base. The fork targets the published DSH
 # npm alpha line >=0.1.2-alpha.2 <0.1.3 and installs from npm with
-#   dsh plugin --profile web add dsh-memoir@latest
+#   dsh plugin --profile web add dsh-memoir-sqlite@latest
 #
 # The row is a bare plugin by package name: the node half (exports ".")
 # registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel
@@ -13,6 +13,7 @@
 # Optional config (all default true):
 #   config:
 #     enabled: true          # master switch (tools, routes, prompt section)
+#     showConversationView: true # register the per-conversation Memory tab
 #     language: zh           # agent-facing copy: zh (default) or en
 #     announceToAgent: true  # system-prompt announcement
 #     autoDistill: true      # steer a distill prompt after each worked turn
@@ -27,8 +28,8 @@
 #   readMaxLimit: 30
 #   sessionSnapshotMax: 128
 #   queryCacheSize: 128
-# Overrides live in $DSH_HOME/dsh-memoir.settings.json (default ~/.dsh) and
+# Overrides live in $DSH_HOME/dsh-memoir-sqlite/settings.json and
 # can be reset without changing the memory store.
 - insert:
-    - id: memoir
-      name: dsh-memoir
+    - id: memoir-sqlite
+      name: dsh-memoir-sqlite

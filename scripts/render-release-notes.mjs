@@ -61,8 +61,8 @@ export function renderReleaseNotes(changelog, version) {
     '',
     '---',
     '',
-    `- [完整更新日志 / Full changelog](https://github.com/Qinling-Melon-Farmers/dsh-memoir/blob/v${version}/CHANGELOG.md)`,
-    `- [npm package](https://www.npmjs.com/package/dsh-memoir/v/${version})`,
+    `- [完整更新日志 / Full changelog](https://github.com/choco9527/dsh-memoir-sqlite/blob/v${version}/CHANGELOG.md)`,
+    `- [npm package](https://www.npmjs.com/package/dsh-memoir-sqlite/v/${version})`,
     '',
   ].join('\n')
 }

@@ -60,6 +60,12 @@ export interface MemoirSettingsProvider {
   reset(): MemoirSettingsSnapshot
 }
 
+/** Deployment-owned visibility of optional Memoir client surfaces. */
+export interface MemoirUiConfig {
+  showConversationView: boolean
+}
+export type MemoirUiConfigProvider = () => MemoirUiConfig
+
 export interface Envelope<T = unknown> {
   ok: boolean
   value?: T
@@ -155,6 +161,7 @@ function wireProject(
  * @param touchWorkspace - deprecated compatibility slot; GET requests never
  *   use it for authorization because browser-supplied paths are untrusted.
  * @param settings - optional persistent live runtime settings.
+ * @param uiConfig - optional deployment-owned client-surface visibility.
  * @returns route definitions for ctx.webServer.register.
  */
 export function makeRoutes(
@@ -165,6 +172,7 @@ export function makeRoutes(
   allowedWorkspace?: (path: string) => boolean,
   touchWorkspace?: (path: string) => void,
   settings?: MemoirSettingsProvider,
+  uiConfig?: MemoirUiConfigProvider,
 ): WebRoute[] {
   const handler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // Without a settings provider, retain the route layer's historical
@@ -181,6 +189,10 @@ export function makeRoutes(
 
     // ------------------------------------------------------------ reads
     if (method === 'GET') {
+      if (pathname === '/api/dsh-memoir/ui-config') {
+        json(res, OK(uiConfig?.() ?? { showConversationView: true }))
+        return
+      }
       if (pathname === '/api/dsh-memoir/settings') {
         if (settings === undefined) {
           json(res, FAIL(NOT_FOUND), 404)

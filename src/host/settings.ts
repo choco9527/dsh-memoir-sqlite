@@ -3,7 +3,7 @@
  *
  * cordis.patch.yml remains the source of startup defaults. Once the user
  * saves either GUI settings surface, the normalized override is stored in
- * $DSH_HOME/dsh-memoir.settings.json (defaulting to ~/.dsh) and applied
+ * $DSH_HOME/dsh-memoir-sqlite/settings.json and applied
  * without a profile restart.
  * Resetting removes the override and restores the startup defaults captured
  * when the plugin mounted.
@@ -81,9 +81,9 @@ const INTEGER_FIELDS = [
 ] as const
 const ALLOWED_FIELDS = ['language', ...BOOLEAN_FIELDS, ...INTEGER_FIELDS, 'autoDistillCooldownMin'] as const
 
-/** Default settings location: $DSH_HOME/dsh-memoir.settings.json (fallback ~/.dsh). */
+/** Default settings location under $DSH_HOME (fallback ~/.dsh). */
 export function defaultSettingsPath(): string {
-  return join(resolveDshHome(), 'dsh-memoir.settings.json')
+  return join(resolveDshHome(), 'dsh-memoir-sqlite', 'settings.json')
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {

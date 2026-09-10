@@ -7,7 +7,7 @@ body:
       value: |
         请保持本模板完整并填写所有必填部分。删除必填部分的 Issue 将被自动关闭。Bug 请使用「Bug 报告」表单，并附截图 / 日志证据、冒烟测试、引用代码与补丁。
 
-        提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/Qinling-Melon-Farmers/dsh-memoir/issues?q=is%3Aissue)
+        提交前请先搜索确认没有重复：[搜索现有 Issue](https://github.com/choco9527/dsh-memoir-sqlite/issues?q=is%3Aissue)
   - type: checkboxes
     id: duplicate-check
     attributes:
@@ -82,7 +82,7 @@ body:
       placeholder: |
         - DSH 版本:
         - 浏览器:
-        - dsh-memoir 版本 / 安装方式（github: / file:）:
+        - dsh-memoir-sqlite 版本 / 安装方式（github: / file:）:
         - 操作系统:
     validations:
       required: true

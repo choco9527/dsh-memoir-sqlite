@@ -151,6 +151,18 @@ test('MemoirApi.update patches content and lifecycle fields', async () => {
   })
 })
 
+test('MemoirApi reads deployment-owned client-surface visibility', async () => {
+  const calls: string[] = []
+  const fetchImpl = async (url: string) => {
+    calls.push(url)
+    return envelopeResponse(200, JSON.stringify({ ok: true, value: { showConversationView: false } }))
+  }
+  const api = new MemoirApi(fetchImpl)
+
+  assert.deepEqual(await api.uiConfig(), { showConversationView: false })
+  assert.deepEqual(calls, ['/api/dsh-memoir/ui-config'])
+})
+
 test('MemoirApi settings methods use JSON-protected live-policy routes', async () => {
   const calls: Array<{ url: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }> = []
   const snapshot = {

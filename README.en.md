@@ -1,31 +1,23 @@
-# dsh-memoir
+# dsh-memoir-sqlite
 
-[![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
-[![CI](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Qinling-Melon-Farmers/dsh-memoir/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/dsh-memoir.svg)](./LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-[中文](./README.md) · English · [Changelog](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
+[中文](./README.md) · English · [Changelog](./CHANGELOG.md)
 
-**A local-first, cross-session project-memory plugin for DeepSeek Harness (DSH).** It persists an agent's confirmed work, lessons, and next actions, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through local BM25 ranking.
+**A SQLite-backed, cross-session project-memory plugin for DeepSeek Harness (DSH).** It curates lasting preferences, verified lessons, and user-approved reusable workflows, also supports explicitly requested records, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through CJK-aware local BM25 ranking.
 
-No embeddings, vector database, or cloud memory service. The npm package has zero bundled runtime dependencies; DSH peers are supplied by the host.
+This project is forked from [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir). It preserves automatic distillation, Hot Memory, CJK BM25, lifecycle management, and the native Web GUI while replacing the structured source of truth with Node's built-in `node:sqlite`. It needs no ORM, embeddings, vector database, or cloud memory service.
 
 > [!IMPORTANT]
-> npm `latest` is `dsh-memoir@0.6.1` for `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`, validated against DSH alpha.4 and the current alpha.5. Users remaining on `0.1.1-rc.2` should pin `dsh-memoir@0.5.6`.
+> The current source targets `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`. It exposes the same tools and UI identifiers as upstream `dsh-memoir`; do not enable both in one profile.
 
-```bash
-npm install --global @deepseek-ai/dsh@alpha
-dsh plugin --profile web add dsh-memoir@latest
-```
-
-Restart `dsh web`. Memory remains local and is not automatically deleted when the plugin is updated or removed.
+Build from source and install through `link:` or a tarball as shown below. Memory remains local and is not automatically deleted when the plugin is updated or removed.
 
 ## Why dsh-memoir
 
 | Capability | What you get |
 | --- | --- |
-| Local-first storage | A JSON single source of truth plus per-project `PROJECT_MEMORY.md`; no memory upload or external service |
+| Local-first storage | A SQLite source of truth plus per-project `PROJECT_MEMORY.md` projections; no memory upload or external service |
 | Automatic distill reminder | Reminds the top-level agent after a worked turn, then persists transparently through `memoir_record`; skips idle, aborted, subagent, and already-recorded turns |
 | Bounded Hot Memory | Only high-value memory enters the system prompt under a hard token limit; a frozen session prefix improves prompt-prefix cache hits |
 | BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
@@ -45,7 +37,7 @@ worked turn
     ▼
 memoir_record / memoir_update
     │
-    ├── ~/.dsh/dsh-memoir.json       complete structured history (SSOT)
+    ├── $DSH_HOME/dsh-memoir-sqlite/memory.db  complete structured history (SSOT)
     ├── <project>/PROJECT_MEMORY.md   readable, committable projection
     └── Retrieval Index              inverted index + BM25 + query cache
               │
@@ -53,7 +45,7 @@ memoir_record / memoir_update
               └── memoir_read / Web ────> on-demand long-tail recall
 ```
 
-Complete history and Hot Memory are separate layers:
+SQLite stores projects, entries, versions, and mutation audit rows; `PROJECT_MEMORY.md` is a readable projection. Complete history and Hot Memory are separate layers:
 
 - **Full Memory** retains every record for the GUI, human review, Markdown projection, and ranked retrieval.
 - **Hot Memory** selects only budgeted actions, lessons, and recent state; the full `PROJECT_MEMORY.md` is never injected.
@@ -77,7 +69,11 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 
 ## Automatic distillation
 
-Automatic distillation is an observable agent turn-end reminder, not silent background scraping of every chat. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call.
+Automatic distillation is an observable review of lasting value, not an automatic work log or silent background scraping. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call; a reminder does not require a write.
+
+Automatic admission is limited to explicit long-term user preferences and constraints, verified reusable lessons not covered by existing rules, and user-approved workflows with future reuse. Task progress, Job IDs, delivery paths, generation timings, temporary choices, pending authorization, to-dos, and routine results remain in conversation and task records; one choice does not establish a lasting preference. Candidates must remain useful across tasks and add to existing documentation or memory. When uncertain, do not write. Assess value before looking up duplicates; prefer updating confirmed corrections.
+
+Explicit requests to remember something are honored only within the requested scope, including task-specific content. Existing `work / lessons / actions / note` categories and manual editing remain supported; old memory is neither migrated nor cleaned up. Consistent system guidance, turn-end reminders, and tool descriptions guide admission, rather than a database-level semantic filter. Cadence controls review timing only. Plugin updates require a host reload, and frozen prompt snapshots refresh in a new session.
 
 `autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
 
@@ -129,54 +125,44 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 ## Installation and compatibility
 
-| Channel | DSH baseline | Installation | Status |
-| --- | --- | --- | --- |
-| npm `latest` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | Current release; alpha.4 compile and alpha.5 + dsh-web-all browser validated |
-| pinned npm `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 compatibility line |
-| GitHub `main` (`0.6.1`) | `>=0.1.2-alpha.2 <0.1.3` | source clone + `link:` | Synchronized with npm `0.6.1`; intended for development and debugging |
-
-Node.js `^22.19.0 || >=24.0.0` is required. v0.6.x uses the native DSH-alpha `conversation.view` / `settings.section` slots and the Remote-era client module architecture. v0.6.1 supports both the public `session.events` surface in alpha.2/alpha.3 and `session.snapshotEvents()` in alpha.4+. `dsh.engines.dsh` rejects incompatible hosts.
-
-<details>
-<summary>Install from source</summary>
-
-0.6.x source:
+Node.js `^22.19.0 || >=24.0.0` and DSH `>=0.1.2-alpha.2 <0.1.3` are required. The source uses pnpm:
 
 ```bash
-git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
+git clone https://github.com/choco9527/dsh-memoir-sqlite.git
+cd dsh-memoir-sqlite
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@alpha
-dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
+dsh plugin --profile web add "link:/absolute/path/dsh-memoir-sqlite"
 ```
 
-</details>
+Restart the target DSH profile. You can also run `pnpm pack` and have an app build install the resulting tarball.
 
 ## Storage, privacy, and security boundaries
 
 ```text
-~/.dsh/dsh-memoir.json          structured JSON v4 (single source of truth)
-~/.dsh/dsh-memoir.settings.json live GUI setting overrides
-<project>/PROJECT_MEMORY.md      human-readable projection generated from JSON
+$DSH_HOME/dsh-memoir-sqlite/memory.db     SQLite source of truth, versions, and audit
+$DSH_HOME/dsh-memoir-sqlite/settings.json live GUI setting overrides
+<project>/PROJECT_MEMORY.md                human-readable projection generated from SQLite
 ```
 
 - No cloud memory database, embedding API, or vector database;
 - an arbitrary absolute path submitted by the browser does not grant write access; panel writes accept only a trusted active workspace or an existing project bucket;
 - manual browser records cannot spoof trusted session/turn provenance;
-- cross-process writes use an exclusive lock and reread disk inside the critical section, with conservative dead-owner recovery;
+- SQLite uses WAL, while an exclusive lock protects the complete cross-process read-modify-commit sequence;
+- inserts, updates, and deletes append to `entry_revisions`, and entry versions increase monotonically;
 - Windows path keys are case-normalized while display paths retain their original form;
 - `PROJECT_MEMORY.md` may be committed by you, so the user decides whether sensitive content enters Git.
 
-Back up the JSON and project Markdown according to your own policy before upgrades. Removing the plugin does not actively delete them.
+On the first default-path start, an empty database automatically imports `$DSH_HOME/dsh-memoir.json`. Store callers can also import another legacy file explicitly. Import never modifies the source JSON. Back up the database, legacy JSON, and project Markdown before upgrades. Removing the plugin does not actively delete them.
 
 ## Configuration
 
-Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for `enabled`, each is also live-editable and persisted from the Memory panel or Settings card.
+Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for `enabled` and `showConversationView`, each is also live-editable and persisted from the Memory panel or Settings card.
 
 | Field | Default | Purpose |
 | --- | ---: | --- |
 | `enabled` | `true` | master switch for tools, routes, and prompt injection |
+| `showConversationView` | `true` | register the per-conversation Memory view; the Settings section always remains available |
 | `language` | `zh` | agent-facing prompt, tool schema/result, projection-heading, and error language; `zh` or `en` |
 | `announceToAgent` | `true` | announce memory tools and rules to the agent |
 | `autoDistill` | `true` | enable top-level worked-turn reminders |
@@ -194,22 +180,12 @@ Shrinking a cache evicts the oldest entries immediately. Existing frozen session
 
 ## Performance and verification
 
-v0.5.6 benchmark (Node 24.19, 900/1200-token budget; full data in [`bench/report.md`](./bench/report.md)):
-
-| Entries | Index build | Uncached query | Cached query | Injection reduction vs full Markdown |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 10.5 ms | 1.190 ms | 4.07 µs | 97.6% |
-| 10,000 | 126.9 ms | 11.011 ms | 1.45 µs | 99.8% |
-| 100,000 | 1.68 s | 126.933 ms | 1.42 µs | about 100% |
-
-Numbers vary by machine and corpus. The important properties are that injection remains bounded and the cache-hit path is independent of total memory size.
-
-v0.6.1 has 189 automated tests covering store/settings migration and locks, Hot Memory, BM25 quality/cache, lifecycle, provenance anti-spoofing, similar-memory governance, automatic distillation, bilingual agent and GUI surfaces, project disclosure/progressive loading, scrolling, and DSH-alpha compatibility. An isolated DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` profile also passed Settings and real-session browser regression; alpha.4 type compilation passed separately.
+The fork retains upstream's bounded Hot Memory, query cache, and CJK BM25 quality corpus. It adds tests for the SQLite schema, WAL, file permissions, versioned audit history, corrupt-database preservation, cross-connection visibility, and legacy JSON import. The historical JSON-store benchmark remains in [`bench/report.md`](./bench/report.md); SQLite persistence will be rebenchmarked before release so old numbers are not presented as current results.
 
 ## FAQ
 
 **Does it automatically summarize every chat?**<br>
-It does not silently scrape every conversation. At the end of an eligible turn it reminds the current agent to distill, and the agent writes through a public tool, keeping the process observable and reviewable.
+No. Eligible turns prompt a review of lasting value only; with no qualified candidate, no memory tools are called. Writes use public tools and remain observable and reviewable.
 
 **Why does every new memory start at importance 3?**<br>
 Three is the neutral default on a 1–5 scale, so unscored content is neither demoted nor treated as highest priority. Change it through tool arguments or the GUI; pinning has separate weight.
@@ -230,9 +206,9 @@ pnpm install --frozen-lockfile
 pnpm run build
 pnpm run typecheck
 pnpm test
-npm run bench
+pnpm run bench
 ```
 
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes. See [CHANGELOG.md](./CHANGELOG.md) for version history. Formal packages are published by the tag workflow through npm OIDC. The current npm release is [v0.6.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1), and `main` is synchronized with it.
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before submitting changes and [CHANGELOG.md](./CHANGELOG.md) for version history. This fork is based on upstream `dsh-memoir@0.6.1`; the Apache-2.0 license and original copyright notice remain intact.
 
 Apache-2.0

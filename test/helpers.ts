@@ -27,7 +27,7 @@ export function makeTempWorkspace(): TempWorkspace {
 
 /** Make one fresh temp store path (non-existent yet). */
 export function makeTempStorePath(): string {
-  return join(tmpdir(), `memoir-store-${Date.now()}-${Math.random().toString(16).slice(2)}.json`)
+  return join(tmpdir(), `memoir-store-${Date.now()}-${Math.random().toString(16).slice(2)}.db`)
 }
 
 /** A tool exec object with a session cwd, source session, and matching turn. */

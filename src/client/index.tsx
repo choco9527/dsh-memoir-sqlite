@@ -127,16 +127,12 @@ export function apply(rawCtx: Context): void {
 
   ctx.effect(() => mountPanelStyles(), 'dsh-memoir: native alpha styles')
   ctx.effect(() => {
+    let disposed = false
+    let showConversationView: boolean | undefined
     let disposers: Array<() => void> = []
     const register = (): void => {
       for (const dispose of disposers.splice(0)) dispose()
-      disposers = [
-        ctx.slots.inject('conversation.view', () => ctx.slots.register({
-          name: 'conversation.view',
-          id: 'memoir',
-          order: 20,
-          label: () => t('entry.label'),
-        }, props => <ConversationMemoirView {...props} api={api} ctx={ctx} t={t} />)),
+      const next = [
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: 'memoir',
@@ -144,15 +140,38 @@ export function apply(rawCtx: Context): void {
           label: () => t('entry.label'),
         }, props => <SettingsMemoirSection {...props} api={api} ctx={ctx} t={t} />)),
       ]
+      if (showConversationView) {
+        next.unshift(ctx.slots.inject('conversation.view', () => ctx.slots.register({
+          name: 'conversation.view',
+          id: 'memoir',
+          order: 20,
+          label: () => t('entry.label'),
+        }, props => <ConversationMemoirView {...props} api={api} ctx={ctx} t={t} />)))
+      }
+      disposers = next
     }
 
     register()
+    void api.uiConfig()
+      .then((config) => {
+        if (disposed) return
+        showConversationView = config.showConversationView
+        register()
+      })
+      .catch(() => {
+        if (disposed) return
+        // Older Hosts have no UI-config route; preserve the public plugin's
+        // historical Conversation view when Client and Host versions differ.
+        showConversationView = true
+        register()
+      })
     // Memoir owns a tiny bilingual dictionary rather than importing the
     // unpublished alpha locale package. Re-registering bumps both native
     // rosters so their labels switch with the shell language immediately.
     const observer = new MutationObserver(register)
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] })
     return () => {
+      disposed = true
       observer.disconnect()
       for (const dispose of disposers.splice(0)) dispose()
     }

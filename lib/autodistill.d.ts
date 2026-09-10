@@ -1,8 +1,8 @@
 /**
  * Automatic turn-end distillation: when the plugin is enabled, each turn of a
  * top-level agent that did real work (made tool calls) and did not already
- * record memory is followed by one steering step asking the agent to distill
- * the turn into memoir_record entries. Turns without tool activity are left
+ * record memory is followed by one steering step asking the agent to assess
+ * curated long-term candidates, with no write required. Turns without tool activity are left
  * alone (no extra model cost), subagent sessions are never steered, and each
  * turn is steered at most once — the steering step runs inside the same turn,
  * so the per-turn gate is what lets the turn close afterwards.
@@ -16,7 +16,7 @@ export declare function distillPrompt(language?: MemoirLanguage): string;
 /** Backwards-compatible Chinese prompt constant. */
 export declare const DISTILL_PROMPT: string;
 /** Plugin identity stamped on the steering message source. */
-export declare const AUTO_DISTILL_PLUGIN = "dsh-memoir";
+export declare const AUTO_DISTILL_PLUGIN = "dsh-memoir-sqlite";
 /** A minimal event view for the turn-activity scan (data is narrowed inside). */
 export interface TurnEventLike {
     type: string;

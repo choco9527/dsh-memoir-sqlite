@@ -63,6 +63,11 @@ export interface MemoirSettingsProvider {
     update(patch: MemoirSettingsPatch): MemoirSettingsSnapshot;
     reset(): MemoirSettingsSnapshot;
 }
+/** Deployment-owned visibility of optional Memoir client surfaces. */
+export interface MemoirUiConfig {
+    showConversationView: boolean;
+}
+export type MemoirUiConfigProvider = () => MemoirUiConfig;
 export interface Envelope<T = unknown> {
     ok: boolean;
     value?: T;
@@ -86,6 +91,7 @@ export declare function readJsonBody(req: IncomingMessage, limit?: number): Prom
  * @param touchWorkspace - deprecated compatibility slot; GET requests never
  *   use it for authorization because browser-supplied paths are untrusted.
  * @param settings - optional persistent live runtime settings.
+ * @param uiConfig - optional deployment-owned client-surface visibility.
  * @returns route definitions for ctx.webServer.register.
  */
-export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider, retrieval?: RetrievalEngine, hotMemory?: HotMemoryProvider, allowedWorkspace?: (path: string) => boolean, touchWorkspace?: (path: string) => void, settings?: MemoirSettingsProvider): WebRoute[];
+export declare function makeRoutes(store: MemoirStore, diagnostics?: DiagnosticsProvider, retrieval?: RetrievalEngine, hotMemory?: HotMemoryProvider, allowedWorkspace?: (path: string) => boolean, touchWorkspace?: (path: string) => void, settings?: MemoirSettingsProvider, uiConfig?: MemoirUiConfigProvider): WebRoute[];

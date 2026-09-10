@@ -4,7 +4,7 @@
  * window.__ModuleLoader__.load({ id, factory }), resolving platform modules
  * (react, react/jsx-runtime, react-dom, the @deepseek-ai client seed table)
  * through the loader's injected require. The output lands at lib/client.js,
- * served by the host as /plugins/dsh-memoir/client.js.
+ * served by the host as /plugins/dsh-memoir-sqlite/client.js.
  */
 
 import { build } from 'esbuild'
@@ -21,7 +21,7 @@ const PLATFORM_MODULES = [
   '@deepseek-ai/dsh-client-schema-form',
 ]
 
-const ID = 'dsh-memoir'
+const ID = 'dsh-memoir-sqlite'
 
 await build({
   entryPoints: ['src/client/index.tsx'],

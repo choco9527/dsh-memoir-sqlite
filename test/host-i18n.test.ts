@@ -13,6 +13,20 @@ import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 const CJK = /[\u3400-\u9fff]/u
 
+test('all writing prompts require curated durable knowledge in both languages', () => {
+  const cases = [
+    ['zh', [/精选长期记忆/, /长期偏好/, /已验证/, /用户认可/, /Job ID/, /待授权/, /不确定.*不写/, /明确要求.*记住/]],
+    ['en', [/curated long-term memory/, /long-term preferences/, /verified/, /user-approved/, /Job IDs/, /pending authorization/, /uncertain.*do not write/, /explicitly asks.*remember/]],
+  ] as const
+  for (const [language, rules] of cases) {
+    const surfaces = [memoirGuidance(language), distillPrompt(language), hostCopy(language).record.description]
+    for (const surface of surfaces) {
+      for (const rule of rules) assert.match(surface, rule)
+    }
+    assert.doesNotMatch(distillPrompt(language), /若本轮有实质产出|If the turn produced substantive work/)
+  }
+})
+
 test('English agent copy contains no hardcoded Chinese in prompt surfaces', () => {
   const copy = hostCopy('en')
   for (const value of [

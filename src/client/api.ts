@@ -55,6 +55,8 @@ export interface WireEntry {
   title?: string
   content: string
   time: number
+  updatedAt?: number
+  version?: number
   source?: { sessionId?: string; turnId?: number }
   /** Legacy v3 wire alias; prefer source.sessionId. */
   sessionId?: string
@@ -135,6 +137,11 @@ export interface WireMemoirSettings {
   readMaxLimit: number
   sessionSnapshotMax: number
   queryCacheSize: number
+}
+
+/** Deployment-owned visibility of optional Memoir client surfaces. */
+export interface WireMemoirUiConfig {
+  showConversationView: boolean
 }
 
 export interface WireMemoirSettingsSnapshot {
@@ -222,6 +229,12 @@ export class MemoirApi {
   async diagnostics(path?: string): Promise<WireDiagnostics> {
     const response = await this.fetchImpl('/api/dsh-memoir/diagnostics' + query({ path }))
     return readEnvelope(response) as Promise<WireDiagnostics>
+  }
+
+  /** Read deployment-owned client-surface visibility. */
+  async uiConfig(): Promise<WireMemoirUiConfig> {
+    const response = await this.fetchImpl('/api/dsh-memoir/ui-config')
+    return readEnvelope(response) as Promise<WireMemoirUiConfig>
   }
 
   /** Read all live settings and whether they come from Web overrides. */

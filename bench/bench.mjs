@@ -3,7 +3,7 @@
  * dsh-memoir benchmark (roadmap §7) — cold store load / warm store read /
  * hot-memory build / index build / uncached vs cached ranked query / query
  * cache hit rate / token reduction / snapshot reuse, over four fixed fixture
- * sizes. NOT part of CI gates: run manually (npm run bench) and commit
+ * sizes. NOT part of CI gates: run manually (pnpm run bench) and commit
  * bench/report.md for trend tracking.
  *
  * v0.4.2 methodology fix: "uncached query" measures engine.search() directly

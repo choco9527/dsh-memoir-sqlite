@@ -1,30 +1,23 @@
-# dsh-memoir
+# dsh-memoir-sqlite
 
-[![npm version](https://img.shields.io/npm/v/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
-[![npm downloads](https://img.shields.io/npm/dm/dsh-memoir.svg)](https://www.npmjs.com/package/dsh-memoir)
-[![license](https://img.shields.io/npm/l/dsh-memoir.svg)](./LICENSE)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md) · [Releases](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases)
+中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md)
 
-**DeepSeek Harness（DSH）的本地优先、跨会话项目记忆插件。** 它把 Agent 已确认的工作结论、经验教训和后续行动持久化，在新会话中注入有界且缓存友好的 Hot Memory，并通过本地 BM25 排序召回长尾历史。
+**DeepSeek Harness（DSH）的 SQLite 跨会话项目记忆插件。** 它精选长期偏好、已验证经验和用户认可的可复用流程，也支持用户明确要求保存的内容，在新会话中注入有界且缓存友好的 Hot Memory，并通过对中文友好的本地 BM25 排序召回长尾历史。
 
-无需 embedding、向量数据库或云端记忆服务；npm 包零捆绑运行时依赖，DSH peer 由宿主提供。
+本项目 Fork 自 [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir)，保留其自动蒸馏、Hot Memory、中文 BM25、生命周期与原生 Web GUI，并把结构化单一事实源替换为 Node 内置 `node:sqlite`。无需 ORM、embedding、向量数据库或云端记忆服务。
 
 > [!IMPORTANT]
-> npm `latest` 为 `dsh-memoir@0.6.1`，适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`，已验证 DSH alpha.4 与当前 alpha.5。仍使用 `0.1.1-rc.2` 的用户应固定安装 `dsh-memoir@0.5.6`。
+> 当前源码版适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`。它与原版 `dsh-memoir` 提供同名工具和 UI，不应在同一 profile 中同时启用。
 
-```bash
-npm install --global @deepseek-ai/dsh@alpha
-dsh plugin --profile web add dsh-memoir@latest
-```
-
-重启 `dsh web` 即可。记忆保存在本机，不会随插件升级或卸载自动删除。
+从源码构建后，通过 `link:` 或 tarball 安装；详细命令见下方“安装与兼容性”。记忆保存在本机，不会随插件升级或卸载自动删除。
 
 ## 为什么选择 dsh-memoir
 
 | 能力 | 用户得到什么 |
 | --- | --- |
-| 本地优先 | JSON 单一事实源与项目内 `PROJECT_MEMORY.md`；不上传记忆，不依赖外部服务 |
+| 本地优先 | SQLite 单一事实源与项目内 `PROJECT_MEMORY.md` 投影；不上传记忆，不依赖外部服务 |
 | 自动蒸馏提醒 | 顶层 Agent 完成有效工作回合时提醒归纳，由 `memoir_record` 透明落盘；跳过 idle、aborted、subagent 和已记录回合 |
 | 有界 Hot Memory | 只把高价值记忆放进 system prompt，受 token 预算硬限制；同一会话冻结前缀以提高 prompt-prefix cache 命中 |
 | BM25 排序召回 | 中文短语、英文关键词、代码标识符和路径都可检索；跨项目 Top-K 与查询 LRU 缓存共用同一引擎 |
@@ -44,7 +37,7 @@ dsh plugin --profile web add dsh-memoir@latest
     ▼
 memoir_record / memoir_update
     │
-    ├── ~/.dsh/dsh-memoir.json       完整结构化历史（SSOT）
+    ├── $DSH_HOME/dsh-memoir-sqlite/memory.db  完整结构化历史（SSOT）
     ├── <项目>/PROJECT_MEMORY.md      可读、可提交的投影
     └── Retrieval Index              倒排索引 + BM25 + 查询缓存
               │
@@ -52,7 +45,7 @@ memoir_record / memoir_update
               └── memoir_read / Web ────> 按需召回长尾历史
 ```
 
-完整历史与 Hot Memory 是两层数据：
+SQLite 保存项目、条目、版本及增删改审计；`PROJECT_MEMORY.md` 只是可读投影。完整历史与 Hot Memory 是两层数据：
 
 - **Full Memory** 保留全部记录，用于 GUI、人工审阅、Markdown 投影和排序检索。
 - **Hot Memory** 只选择预算内的 actions、lessons 与 recent state；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
@@ -76,7 +69,11 @@ memoir_record / memoir_update
 
 ## 自动蒸馏
 
-自动蒸馏是可观察的 Agent 收尾提醒，不是后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒。
+自动蒸馏是可观察的长期价值筛选提醒，不是自动工作日志或后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒；提醒不要求写入。
+
+自动收录仅限用户明确的长期偏好与约束、已验证且现有规则未覆盖的可复用经验、用户认可且未来可复用的新流程。任务进度、Job ID、交付路径、生成耗时、临时选择、待授权状态、待办及普通执行结果留在会话和任务记录，不自动沉淀；一次选择不能推断为长期偏好。候选需长期有效、跨任务可复用且不重复已有说明或记忆，不确定就不写。先判断价值，再按需查询重复项，已确认的纠正优先更新原条目。
+
+用户明确要求“记住”时按指定范围保存，包括任务特定内容。已有 `work / lessons / actions / note` 分类及手工编辑能力保留，不迁移或清理旧记忆。收录判断通过一致的系统提示、收尾提醒和工具说明引导模型，并非数据库层面的语义硬过滤；提醒频率只控制检查时机。插件更新需要宿主重新加载，已冻结的会话提示需新会话才能刷新。
 
 `autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已调用 `memoir_record` 的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
 
@@ -128,54 +125,44 @@ memoir_record / memoir_update
 
 ## 安装与兼容性
 
-| 渠道 | DSH 基线 | 安装方式 | 状态 |
-| --- | --- | --- | --- |
-| npm `latest`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | `dsh plugin --profile web add dsh-memoir@latest` | 当前正式版；已验证 alpha.4 编译及 alpha.5 + dsh-web-all 实机 UI |
-| npm 固定版 `0.5.6` | `0.1.1-rc.2` | `dsh plugin --profile web add dsh-memoir@0.5.6` | rc2 兼容线 |
-| GitHub `main`（`0.6.1`） | `>=0.1.2-alpha.2 <0.1.3` | 源码 clone + `link:` | 与 npm `0.6.1` 同步；供开发和调试使用 |
-
-需要 Node.js `^22.19.0 || >=24.0.0`。`0.6.x` 使用 DSH alpha 的原生 `conversation.view` / `settings.section` 与 Remote 时代客户端模块；`0.6.1` 同时兼容 alpha.2/alpha.3 的公开 `session.events` 与 alpha.4+ 的 `session.snapshotEvents()`。manifest 的 `dsh.engines.dsh` 会拒绝不兼容宿主。
-
-<details>
-<summary>从源码安装</summary>
-
-0.6.x 源码：
+需要 Node.js `^22.19.0 || >=24.0.0` 以及 DSH `>=0.1.2-alpha.2 <0.1.3`。源码使用 pnpm：
 
 ```bash
-git clone https://github.com/Qinling-Melon-Farmers/dsh-memoir.git
-cd dsh-memoir
+git clone https://github.com/choco9527/dsh-memoir-sqlite.git
+cd dsh-memoir-sqlite
 pnpm install --frozen-lockfile
 pnpm run build
-npm install --global @deepseek-ai/dsh@alpha
-dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
+dsh plugin --profile web add "link:/absolute/path/dsh-memoir-sqlite"
 ```
 
-</details>
+重启对应 DSH profile 后生效。也可执行 `pnpm pack`，再让 App 构建脚本安装生成的 tarball。
 
 ## 存储、隐私与安全边界
 
 ```text
-~/.dsh/dsh-memoir.json          结构化 JSON v4（单一事实源）
-~/.dsh/dsh-memoir.settings.json GUI 运行时设置覆盖
-<项目>/PROJECT_MEMORY.md        从 JSON 生成的人类可读投影
+$DSH_HOME/dsh-memoir-sqlite/memory.db    SQLite 单一事实源、版本与审计
+$DSH_HOME/dsh-memoir-sqlite/settings.json GUI 运行时设置覆盖
+<项目>/PROJECT_MEMORY.md                 从 SQLite 生成的人类可读投影
 ```
 
 - 无云端记忆库、embedding API 或向量数据库；
 - 浏览器提交任意绝对路径不能获得写权限，面板写入只接受可信活动工作区或已存在的项目桶；
 - 浏览器手工记录不能伪造可信 session/turn 来源；
-- 跨进程写入使用独占锁并在临界区重新读盘，保守回收死亡进程遗留锁；
+- SQLite 使用 WAL；跨进程写入另有独占锁保护完整的读取—修改—提交过程；
+- 每次新增、修改和删除都写入 `entry_revisions` 审计表，条目版本单调递增；
 - Windows 路径键大小写归一化，展示路径保留原样；
 - `PROJECT_MEMORY.md` 可能被你提交到 Git，敏感内容是否进入仓库由使用者决定。
 
-建议在升级前按自己的备份策略保存上述 JSON 与项目 Markdown。卸载插件不会主动删除它们。
+首次以默认路径启动时，空数据库会自动导入旧的 `$DSH_HOME/dsh-memoir.json`；也可通过 Store API 显式导入其他旧文件。导入不会修改旧 JSON。建议升级前备份数据库、旧 JSON 与项目 Markdown，卸载插件不会主动删除它们。
 
 ## 配置
 
-以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除 `enabled` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
+以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除 `enabled` 和 `showConversationView` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
 
 | 字段 | 默认值 | 作用 |
 | --- | ---: | --- |
 | `enabled` | `true` | 工具、路由和 prompt 注入总开关 |
+| `showConversationView` | `true` | 是否注册会话顶部的“记忆”视图；Settings 分区始终保留 |
 | `language` | `zh` | Agent 可见的 prompt、工具 schema/结果、投影标题与错误语言；可选 `zh` / `en` |
 | `announceToAgent` | `true` | 向 Agent 公告记忆工具与规则 |
 | `autoDistill` | `true` | 启用顶层有效回合收尾提醒 |
@@ -193,22 +180,12 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir"
 
 ## 性能与验证
 
-v0.5.6 基准（Node 24.19，900/1200 token；完整数据见 [`bench/report.md`](./bench/report.md)）：
-
-| 记录数 | 索引构建 | 未缓存查询 | 缓存查询 | 相对完整 Markdown 的注入降幅 |
-| ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 10.5 ms | 1.190 ms | 4.07 µs | 97.6% |
-| 10,000 | 126.9 ms | 11.011 ms | 1.45 µs | 99.8% |
-| 100,000 | 1.68 s | 126.933 ms | 1.42 µs | 约 100% |
-
-基准值取决于机器和语料；它证明的重点是注入预算保持有界、缓存命中路径与记忆总量解耦。
-
-v0.6.1 有 189 项自动化测试，覆盖存储/设置迁移与锁、Hot Memory、BM25 质量/缓存、生命周期、来源防伪、相似治理、自动蒸馏、Agent 侧与 GUI 双语、项目折叠/渐进加载、滚动布局及 DSH alpha 兼容。另在隔离 profile 中以 DSH alpha.5 + `@linxin666/dsh-web-all@0.3.12` 完成 Settings 与真实会话页浏览器回归；alpha.4 类型编译也已通过。
+Fork 保留上游有界 Hot Memory、查询缓存和中文 BM25 质量集，并新增 SQLite schema、WAL、权限、版本审计、损坏备份、跨连接可见性和旧 JSON 导入测试。上游 JSON 版本的历史基准仍保留在 [`bench/report.md`](./bench/report.md)，SQLite 版本发布前会单独重跑持久化基准，避免把旧数字当成当前结果。
 
 ## 常见问题
 
 **会自动总结所有聊天吗？**<br>
-不会静默抓取所有对话。插件在符合条件的回合结束时提醒当前 Agent 归纳，Agent 通过公开工具写入，因此过程可观察、可审查。
+不会。符合条件的回合只提醒筛选长期价值；没有合格候选时不调用记忆工具。写入通过公开工具进行，过程可观察、可审查。
 
 **为什么新记忆的重要度总是 3？**<br>
 3 是 1–5 标度的中性默认值，避免未显式评分的内容被当成低价值或最高优先级。可在工具参数或 GUI 中调整，置顶另有独立权重。
@@ -229,9 +206,9 @@ pnpm install --frozen-lockfile
 pnpm run build
 pnpm run typecheck
 pnpm test
-npm run bench
+pnpm run bench
 ```
 
-提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)，正式包由 tag 工作流通过 npm OIDC 发布。当前 npm 正式版是 [v0.6.1](https://github.com/Qinling-Melon-Farmers/dsh-memoir/releases/tag/v0.6.1)，`main` 与该版本同步。
+提交前请阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。版本变化见 [CHANGELOG.md](./CHANGELOG.md)。本 Fork 基于上游 `dsh-memoir@0.6.1`，Apache-2.0 许可证与原作者版权声明保持不变。
 
 Apache-2.0
