@@ -11,6 +11,7 @@
 import type { MemoirEntry, SectionKey } from './store.js'
 import { hostCopy } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
+import { DEFAULT_MEMOIR_SETTINGS } from './settings.js'
 
 /** Token budget for hot-memory injection. */
 export interface MemoryBudget {
@@ -21,7 +22,10 @@ export interface MemoryBudget {
 }
 
 /** Defaults (roadmap §2.3 / config hotMemoryTokens / hotMemoryMaxTokens). */
-export const DEFAULT_MEMORY_BUDGET: MemoryBudget = { targetTokens: 900, hardMaxTokens: 1200 }
+export const DEFAULT_MEMORY_BUDGET: MemoryBudget = {
+  targetTokens: DEFAULT_MEMOIR_SETTINGS.hotMemoryTokens,
+  hardMaxTokens: DEFAULT_MEMOIR_SETTINGS.hotMemoryMaxTokens,
+}
 
 /** Section weights for the v0.4 scoring (roadmap §2.3). */
 export const SECTION_WEIGHTS: Record<SectionKey, number> = {
@@ -31,15 +35,8 @@ export const SECTION_WEIGHTS: Record<SectionKey, number> = {
   note: 0.5,
 }
 
-/**
- * Canonical group render order inside the injected text. v0.4.2: work is
- * intentionally NOT a rendered group — work entries appear only in the
- * "Recent state" block, so the same work line is never injected twice.
- */
+/** Canonical long-term section order; work and note are query-only. */
 export const HOT_SECTION_ORDER: SectionKey[] = ['actions', 'lessons']
-
-/** Recent-work entries shown in the "Recent state" block. */
-export const RECENT_WORK_COUNT = 3
 
 /** CJK-ish codepoint ranges counted as ~1 token each. */
 function isCjk(cp: number): boolean {
@@ -107,8 +104,7 @@ export function compactLine(entry: MemoirEntry, language?: MemoirLanguage): stri
 export const HOT_MEMORY_HEADER = '[Project memory]'
 
 /**
- * Render the selected entries into the compact injected block (roadmap
- * §2.3): Actions / Lessons / Recent state. Deterministic for a fixed input.
+ * Render long-term actions and lessons; work records remain query-only.
  */
 export function renderHotMemory(selected: MemoirEntry[], language?: MemoirLanguage): string {
   // Undefined preserves the pre-v0.6 helper output for source consumers;
@@ -123,16 +119,6 @@ export function renderHotMemory(selected: MemoirEntry[], language?: MemoirLangua
     for (const entry of group) lines.push(compactLine(entry, language))
     lines.push('')
   }
-  // Recent state: the newest selected work entries (activity context).
-  // Work entries render ONLY here (v0.4.2) — no duplicate "Work:" group.
-  const recent = [...selected]
-    .filter((e) => e.section === 'work')
-    .sort((a, b) => b.time - a.time || a.id.localeCompare(b.id))
-    .slice(0, RECENT_WORK_COUNT)
-  if (recent.length > 0) {
-    lines.push(copy?.recent ?? 'Recent state:')
-    for (const entry of recent) lines.push(compactLine(entry, language))
-  }
   return lines.join('\n').replace(/\n\n\n+/g, '\n\n').trim()
 }
 
@@ -142,7 +128,7 @@ export interface HotMemoryResult {
   text: string
   /** Entries that made it into the block. */
   selected: MemoirEntry[]
-  /** Total candidates considered (excluding note). */
+  /** Total active long-term candidates considered (excluding work and note). */
   total: number
   /** Estimated tokens of the injected text. */
   estimatedTokens: number
@@ -169,11 +155,8 @@ export function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number,
 }
 
 /**
- * Select hot memory under the budget. v0.4.2 quota-based order:
- *   1. newest work entries (Recent-state floor, 1~RECENT_WORK_COUNT)
- *   2. ranked actions
- *   3. ranked lessons
- *   4. remaining work entries, newest first
+ * Select ranked actions then lessons under the budget.
+ * Work records and notes are available only through explicit retrieval.
  * Each candidate is added while the rendered estimate stays below
  * targetTokens; hardMaxTokens is never exceeded (an oversized first
  * candidate is truncated into place via truncateEntryToBudget).
@@ -188,12 +171,9 @@ export function selectHotMemory(
   now = Date.now(),
   language?: MemoirLanguage,
 ): HotMemoryResult {
-  const work = entries
-    .filter((e) => e.section === 'work' && (e.status ?? 'active') === 'active')
-    .sort((a, b) => b.time - a.time || a.id.localeCompare(b.id))
   const actions = rankEntries(entries.filter((e) => e.section === 'actions'), now).map((s) => s.entry)
   const lessons = rankEntries(entries.filter((e) => e.section === 'lessons'), now).map((s) => s.entry)
-  const candidates = [...work.slice(0, RECENT_WORK_COUNT), ...actions, ...lessons, ...work.slice(RECENT_WORK_COUNT)]
+  const candidates = [...actions, ...lessons]
   const selected: MemoirEntry[] = []
   const selectedIds = new Set<string>()
   for (const entry of candidates) {
@@ -216,7 +196,7 @@ export function selectHotMemory(
   return {
     text,
     selected,
-    total: rankEntries(entries, now).length,
+    total: candidates.length,
     estimatedTokens: estimateTokens(text),
   }
 }

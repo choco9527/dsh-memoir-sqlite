@@ -20,14 +20,8 @@ export interface MemoryBudget {
 export declare const DEFAULT_MEMORY_BUDGET: MemoryBudget;
 /** Section weights for the v0.4 scoring (roadmap §2.3). */
 export declare const SECTION_WEIGHTS: Record<SectionKey, number>;
-/**
- * Canonical group render order inside the injected text. v0.4.2: work is
- * intentionally NOT a rendered group — work entries appear only in the
- * "Recent state" block, so the same work line is never injected twice.
- */
+/** Canonical long-term section order; work and note are query-only. */
 export declare const HOT_SECTION_ORDER: SectionKey[];
-/** Recent-work entries shown in the "Recent state" block. */
-export declare const RECENT_WORK_COUNT = 3;
 /**
  * Conservative token approximation without a tokenizer library (roadmap
  * §2.3): CJK chars ≈ 1 token each, everything else ≈ 4 chars/token.
@@ -50,8 +44,7 @@ export declare function compactLine(entry: MemoirEntry, language?: MemoirLanguag
 /** The injected header line. */
 export declare const HOT_MEMORY_HEADER = "[Project memory]";
 /**
- * Render the selected entries into the compact injected block (roadmap
- * §2.3): Actions / Lessons / Recent state. Deterministic for a fixed input.
+ * Render long-term actions and lessons; work records remain query-only.
  */
 export declare function renderHotMemory(selected: MemoirEntry[], language?: MemoirLanguage): string;
 /** One selection result (diagnostics + injection). */
@@ -60,7 +53,7 @@ export interface HotMemoryResult {
     text: string;
     /** Entries that made it into the block. */
     selected: MemoirEntry[];
-    /** Total candidates considered (excluding note). */
+    /** Total active long-term candidates considered (excluding work and note). */
     total: number;
     /** Estimated tokens of the injected text. */
     estimatedTokens: number;
@@ -73,11 +66,8 @@ export interface HotMemoryResult {
  */
 export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry;
 /**
- * Select hot memory under the budget. v0.4.2 quota-based order:
- *   1. newest work entries (Recent-state floor, 1~RECENT_WORK_COUNT)
- *   2. ranked actions
- *   3. ranked lessons
- *   4. remaining work entries, newest first
+ * Select ranked actions then lessons under the budget.
+ * Work records and notes are available only through explicit retrieval.
  * Each candidate is added while the rendered estimate stays below
  * targetTokens; hardMaxTokens is never exceeded (an oversized first
  * candidate is truncated into place via truncateEntryToBudget).

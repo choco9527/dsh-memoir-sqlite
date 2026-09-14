@@ -1,12 +1,12 @@
 /**
  * dsh-memoir-sqlite — host half.
  *
- * 把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为项目持久化记忆，
+ * 按用户明确要求、长期偏好和长期规则纠正保存精选项目记忆，
  * 并作为未来 AGENTS 的行动指南：
  *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
  *   - 结构化存储：$DSH_HOME/dsh-memoir-sqlite/memory.db（SQLite）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
- *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
+ *   - 不追加轮末沉淀调用；工作记录仅按需查询
  *
  * v0.4.0 cache-aware injection:
  *   - system prompt 只注入 selector 选出的 Hot Memory（token 预算），
@@ -39,7 +39,7 @@ export interface Config {
     language?: MemoirLanguage;
     /** When true (default), a system-prompt section announces the plugin. */
     announceToAgent?: boolean;
-    /** When true (default), turns with real work are auto-distilled at turn end. */
+    /** @deprecated Accepted for old profiles; turn-end distillation is disabled. */
     autoDistill?: boolean;
     /** Remind after every N eligible worked turns per agent (default 1, minimum 1). */
     autoDistillEvery?: number;
@@ -47,11 +47,11 @@ export interface Config {
     autoDistillCooldownMin?: number;
     /** Minimum tool calls required on the triggering turn (default 1, minimum 1). */
     autoDistillMinTools?: number;
-    /** Hot-memory soft target tokens (default 900). */
+    /** Hot-memory soft target tokens (default 300). */
     hotMemoryTokens?: number;
-    /** Hot-memory hard ceiling tokens (default 1200). */
+    /** Hot-memory hard ceiling tokens (default 500). */
     hotMemoryMaxTokens?: number;
-    /** memoir_read default result count (default 8). */
+    /** memoir_read default result count (default 3). */
     readDefaultLimit?: number;
     /** memoir_read maximum result count (default 30). */
     readMaxLimit?: number;
@@ -113,7 +113,7 @@ export declare function memoirSectionText(store: MemoirStore, context: {
     };
 }, manager?: MemorySnapshotManager, budget?: MemoryBudget, language?: MemoirLanguage): string;
 /**
- * Mount the memory tools, the panel routes, the auto-distill listener, and
+ * Mount the memory tools, the panel routes, and
  * the per-project announcement.
  * @param ctx - host plugin context carrying tools/systemPrompt/webServer.
  * @param config - resolved plugin config (defaults apply when absent).

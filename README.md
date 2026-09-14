@@ -4,9 +4,9 @@
 
 中文 · [English](./README.en.md) · [更新日志](./CHANGELOG.md)
 
-**DeepSeek Harness（DSH）的 SQLite 跨会话项目记忆插件。** 它精选长期偏好、已验证经验和用户认可的可复用流程，也支持用户明确要求保存的内容，在新会话中注入有界且缓存友好的 Hot Memory，并通过对中文友好的本地 BM25 排序召回长尾历史。
+**DeepSeek Harness（DSH）的 SQLite 跨会话项目记忆插件。** 它仅收录明确的记忆要求、长期偏好与长期规则纠正，在新会话中注入有界且缓存友好的 Hot Memory，并通过对中文友好的本地 BM25 排序召回长尾历史。
 
-本项目 Fork 自 [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir)，保留其自动蒸馏、Hot Memory、中文 BM25、生命周期与原生 Web GUI，并把结构化单一事实源替换为 Node 内置 `node:sqlite`。无需 ORM、embedding、向量数据库或云端记忆服务。
+本项目 Fork 自 [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir)，保留其 Hot Memory、中文 BM25、生命周期与原生 Web GUI，并把结构化单一事实源替换为 Node 内置 `node:sqlite`。无需 ORM、embedding、向量数据库或云端记忆服务。
 
 > [!IMPORTANT]
 > 当前源码版适用于 `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`。它与原版 `dsh-memoir` 提供同名工具和 UI，不应在同一 profile 中同时启用。
@@ -18,7 +18,7 @@
 | 能力 | 用户得到什么 |
 | --- | --- |
 | 本地优先 | SQLite 单一事实源与项目内 `PROJECT_MEMORY.md` 投影；不上传记忆，不依赖外部服务 |
-| 自动蒸馏提醒 | 顶层 Agent 完成有效工作回合时提醒归纳，由 `memoir_record` 透明落盘；跳过 idle、aborted、subagent 和已记录回合 |
+| 克制收录 | 仅响应明确的记忆要求、长期偏好和规则纠正，不追加轮末检查 |
 | 有界 Hot Memory | 只把高价值记忆放进 system prompt，受 token 预算硬限制；同一会话冻结前缀以提高 prompt-prefix cache 命中 |
 | BM25 排序召回 | 中文短语、英文关键词、代码标识符和路径都可检索；跨项目 Top-K 与查询 LRU 缓存共用同一引擎 |
 | 可治理的记忆 | 重要度、置顶、标签、归档、恢复和 supersede 生命周期；相似写入必须显式更新、替代或并存 |
@@ -32,8 +32,8 @@
 ## 工作原理
 
 ```text
-有效工作回合
-    │  自动蒸馏提醒
+明确的记忆要求 / 长期偏好 / 规则纠正
+    │  按需调用记忆工具
     ▼
 memoir_record / memoir_update
     │
@@ -48,7 +48,7 @@ memoir_record / memoir_update
 SQLite 保存项目、条目、版本及增删改审计；`PROJECT_MEMORY.md` 只是可读投影。完整历史与 Hot Memory 是两层数据：
 
 - **Full Memory** 保留全部记录，用于 GUI、人工审阅、Markdown 投影和排序检索。
-- **Hot Memory** 只选择预算内的 actions、lessons 与 recent state；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
+- **Hot Memory** 只选择预算内的 actions 和 lessons；不会把整个 `PROJECT_MEMORY.md` 塞进 prompt。
 - **Session Snapshot** 在会话内冻结注入文本。新写入立即可被工具和 GUI 读取，但自动注入从下一个新会话开始更新。
 
 ## Agent 工具与记忆生命周期
@@ -67,17 +67,15 @@ SQLite 保存项目、条目、版本及增删改审计；`PROJECT_MEMORY.md` �
 - `supersede`：保留旧历史并标记已被新记录替代；
 - `force-record`：确认两条都应存在。
 
-## 自动蒸馏
+## 克制收录
 
-自动蒸馏是可观察的长期价值筛选提醒，不是自动工作日志或后台静默抓取聊天内容。默认 `1 / 0 / 1` 表示：每个有效 worked turn、无额外冷却、至少一次工具调用即可提醒；提醒不要求写入。
+插件不注册轮末监听，不再为沉淀追加模型调用或维护回复。旧 autoDistill 配置仍可读取，但统一解析为 false；频率字段不再生效，设置页也不再提供对应控件。
 
-自动收录仅限用户明确的长期偏好与约束、已验证且现有规则未覆盖的可复用经验、用户认可且未来可复用的新流程。任务进度、Job ID、交付路径、生成耗时、临时选择、待授权状态、待办及普通执行结果留在会话和任务记录，不自动沉淀；一次选择不能推断为长期偏好。候选需长期有效、跨任务可复用且不重复已有说明或记忆，不确定就不写。先判断价值，再按需查询重复项，已确认的纠正优先更新原条目。
+仅在用户明确要求记住、明确表达长期偏好或纠正长期规则时保存，每项用一句简短规则。不从一次选择推断偏好，不自动总结经验或记录任务进度。仅在有明确历史信息需求或需要对合格候选查重时读取。收录条件仍由提示词引导模型，并非数据库语义硬过滤。
 
-用户明确要求“记住”时按指定范围保存，包括任务特定内容。已有 `work / lessons / actions / note` 分类及手工编辑能力保留，不迁移或清理旧记忆。收录判断通过一致的系统提示、收尾提醒和工具说明引导模型，并非数据库层面的语义硬过滤；提醒频率只控制检查时机。插件更新需要宿主重新加载，已冻结的会话提示需新会话才能刷新。
+已有记忆保留并可查询；自动注入只选择 actions 和 lessons，不带入 work 和 note。默认 Hot Memory 估算预算为目标 300、上限 500，不含插件说明和工具描述；memoir_read 默认返回 3 条。显式 profile 和自定义预算仍然有效。读取 v1–v3 设置文件时不改写原文件：旧设置中保存的原默认 900/1200 组合和查询条数 8 会迁移为 300/500 和 3，自定义值保留；再次保存时写入 v4。
 
-`autoDistillEvery`、`autoDistillCooldownMin`、`autoDistillMinTools` 三个条件按 AND 判定并按 Agent 隔离。idle、aborted、subagent 和已调用 `memoir_record` 的回合不会触发；冷却只在提醒成功后更新。所有频率参数都可在 GUI 中即时修改。
-
-`language` 独立控制 Agent 可见的工具描述、参数说明、蒸馏提示、工具结果、Hot Memory / `PROJECT_MEMORY.md` 标题以及校验与治理错误。默认 `zh` 保持向后兼容，也可在 GUI 中切换为 `en`；切换后工具 schema 与后续提示即时更新，不要求重启 DSH。
+插件更新需要宿主重新加载，已有冻结提示快照在新会话刷新。language 设置可实时切换 Agent 侧文案，不影响 Web 界面语言。
 
 ## 本地召回与缓存
 
@@ -157,7 +155,7 @@ $DSH_HOME/dsh-memoir-sqlite/settings.json GUI 运行时设置覆盖
 
 ## 配置
 
-以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除 `enabled` 和 `showConversationView` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
+以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除已停用的 `autoDistill*`、`enabled` 和 `showConversationView` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
 
 | 字段 | 默认值 | 作用 |
 | --- | ---: | --- |
@@ -165,13 +163,10 @@ $DSH_HOME/dsh-memoir-sqlite/settings.json GUI 运行时设置覆盖
 | `showConversationView` | `true` | 是否注册会话顶部的“记忆”视图；Settings 分区始终保留 |
 | `language` | `zh` | Agent 可见的 prompt、工具 schema/结果、投影标题与错误语言；可选 `zh` / `en` |
 | `announceToAgent` | `true` | 向 Agent 公告记忆工具与规则 |
-| `autoDistill` | `true` | 启用顶层有效回合收尾提醒 |
-| `autoDistillEvery` | `1` | 每 N 个 worked turn 最多提醒一次 |
-| `autoDistillCooldownMin` | `0` | 两次成功提醒的最短分钟间隔 |
-| `autoDistillMinTools` | `1` | 触发回合所需的最少工具调用数 |
-| `hotMemoryTokens` | `900` | Hot Memory 常规目标预算 |
-| `hotMemoryMaxTokens` | `1200` | 任何会话都不能超过的硬上限 |
-| `readDefaultLimit` | `8` | `memoir_read` 默认结果数 |
+| `autoDistill*` | — | 旧版兼容字段；轮末检查已停用 |
+| `hotMemoryTokens` | `300` | Hot Memory 常规目标预算 |
+| `hotMemoryMaxTokens` | `500` | 任何会话都不能超过的硬上限 |
+| `readDefaultLimit` | `3` | `memoir_read` 默认结果数 |
 | `readMaxLimit` | `30` | 单次召回实时上限 |
 | `sessionSnapshotMax` | `128` | 会话冻结快照 LRU 容量 |
 | `queryCacheSize` | `128` | BM25 查询 LRU 容量 |

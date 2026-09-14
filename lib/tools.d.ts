@@ -7,7 +7,7 @@
  *
  * v0.3.1: section headers no longer duplicate "##"; project/global reads are
  * bounded by internal hard caps; descriptions and renders are trimmed.
- * v0.4.0: memoir_read gains limit (default 8, max 30) and detail
+ * memoir_read supports limit (default 3, max 30) and detail
  * (compact default / full) so reads are cheap by default.
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';

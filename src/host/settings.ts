@@ -16,14 +16,15 @@ import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, resolveMemoirLanguage } from './i18n
 import type { MemoirLanguage } from './i18n.js'
 import { writeFileAtomic } from './store.js'
 
-export const SETTINGS_VERSION = 3
-const LEGACY_SETTINGS_VERSIONS = new Set([1, 2])
+export const SETTINGS_VERSION = 4
+const LEGACY_SETTINGS_VERSIONS = new Set([1, 2, 3])
 
 /** Every setting that v0.5.4 can change live from the GUI. */
 export interface MemoirSettings {
   /** Language used in prompts, tool schemas/results, and agent-facing errors. */
   language: MemoirLanguage
   announceToAgent: boolean
+  /** Legacy field; turn-end distillation is no longer supported. */
   autoDistill: boolean
   autoDistillEvery: number
   autoDistillCooldownMin: number
@@ -56,13 +57,13 @@ export type AutoDistillSettingsSnapshot = MemoirSettingsSnapshot
 export const DEFAULT_MEMOIR_SETTINGS: MemoirSettings = {
   language: DEFAULT_MEMOIR_LANGUAGE,
   announceToAgent: true,
-  autoDistill: true,
+  autoDistill: false,
   autoDistillEvery: 1,
   autoDistillCooldownMin: 0,
   autoDistillMinTools: 1,
-  hotMemoryTokens: 900,
-  hotMemoryMaxTokens: 1200,
-  readDefaultLimit: 8,
+  hotMemoryTokens: 300,
+  hotMemoryMaxTokens: 500,
+  readDefaultLimit: 3,
   readMaxLimit: 30,
   sessionSnapshotMax: 128,
   queryCacheSize: 128,
@@ -109,7 +110,7 @@ export function resolveMemoirSettings(value: unknown, defaults: MemoirSettings):
   return {
     language: resolveMemoirLanguage(record.language, defaults.language),
     announceToAgent: typeof record.announceToAgent === 'boolean' ? record.announceToAgent : defaults.announceToAgent,
-    autoDistill: typeof record.autoDistill === 'boolean' ? record.autoDistill : defaults.autoDistill,
+    autoDistill: false,
     autoDistillEvery: integer('autoDistillEvery'),
     autoDistillCooldownMin: cooldown,
     autoDistillMinTools: integer('autoDistillMinTools'),
@@ -229,7 +230,15 @@ export class MemoirSettingsStore {
             .filter((key) => Object.prototype.hasOwnProperty.call(parsed, key))
             .map((key) => [key, parsed[key]]))
       if (validateMemoirSettingsPatch(candidate, this.defaults) !== undefined) return
-      this.value = resolveMemoirSettings(candidate, this.defaults)
+      // Old panels persisted every field, including untouched defaults.
+      // Preserve custom budgets and migrate only the former default pair.
+      const migrated = parsed.version === SETTINGS_VERSION ? candidate : {
+        ...candidate,
+        ...(candidate.hotMemoryTokens === 900 && candidate.hotMemoryMaxTokens === 1200
+          ? { hotMemoryTokens: 300, hotMemoryMaxTokens: 500 } : {}),
+        ...(candidate.readDefaultLimit === 8 ? { readDefaultLimit: 3 } : {}),
+      }
+      this.value = resolveMemoirSettings(migrated, this.defaults)
       this.persisted = true
     } catch {
       // A malformed optional settings file must not prevent DSH from booting.

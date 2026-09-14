@@ -15,8 +15,8 @@ const CJK = /[\u3400-\u9fff]/u
 
 test('all writing prompts require curated durable knowledge in both languages', () => {
   const cases = [
-    ['zh', [/精选长期记忆/, /长期偏好/, /已验证/, /用户认可/, /Job ID/, /待授权/, /不确定.*不写/, /明确要求.*记住/]],
-    ['en', [/curated long-term memory/, /long-term preferences/, /verified/, /user-approved/, /Job IDs/, /pending authorization/, /uncertain.*do not write/, /explicitly asks.*remember/]],
+    ['zh', [/精选长期记忆/, /长期偏好/, /纠正长期规则/, /不自动记录经验总结/, /Job ID/, /一句简短规则/, /不确定.*不写/, /明确要求.*记住/]],
+    ['en', [/curated long-term memory/, /long-term preference/, /corrects a lasting rule/, /automatically save lessons/, /Job IDs/, /one concise rule/, /uncertain.*do not write/, /explicitly asks.*remember/]],
   ] as const
   for (const [language, rules] of cases) {
     const surfaces = [memoirGuidance(language), distillPrompt(language), hostCopy(language).record.description]

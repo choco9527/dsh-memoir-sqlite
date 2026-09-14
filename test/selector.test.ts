@@ -83,7 +83,24 @@ test('compact format has no ids-ts-style metadata leaks', () => {
   assert.ok(!line.includes('id-'), 'no ids')
 })
 
-test('renderHotMemory groups Actions/Lessons and Recent state deterministically', () => {
+test('work-only projects add no hot memory and preserve source entries', () => {
+  const entries: MemoirEntry[] = [
+    { id: 'w1', section: 'work', content: '做了插件', time: 300, pinned: true, importance: 5 },
+    { id: 'n1', section: 'note', content: '临时备注', time: 400 },
+  ]
+  const original = structuredClone(entries)
+  const result = selectHotMemory(entries)
+  assert.equal(result.text, '')
+  assert.equal(result.total, 0)
+  assert.deepEqual(result.selected, [])
+  assert.deepEqual(entries, original)
+})
+
+test('default hot-memory budget is 300 target and 500 estimated tokens maximum', () => {
+  assert.deepEqual(DEFAULT_MEMORY_BUDGET, { targetTokens: 300, hardMaxTokens: 500 })
+})
+
+test('renderHotMemory renders Actions/Lessons without work records', () => {
   const entries: MemoirEntry[] = [
     { id: '1', section: 'actions', content: '发布前跑测试', time: 100 },
     { id: '2', section: 'lessons', content: '先查契约', time: 200 },
@@ -95,7 +112,7 @@ test('renderHotMemory groups Actions/Lessons and Recent state deterministically'
   assert.ok(text.startsWith(HOT_MEMORY_HEADER))
   assert.ok(text.includes('Actions:') && text.includes('发布前跑测试'))
   assert.ok(text.includes('Lessons:') && text.includes('先查契约'))
-  assert.ok(text.includes('Recent state:') && text.includes('做了插件'))
+  assert.doesNotMatch(text, /Recent state:|做了插件/)
 })
 
 test('budget: injection never exceeds hardMax (10/100/1000 entries)', () => {
@@ -105,7 +122,7 @@ test('budget: injection never exceeds hardMax (10/100/1000 entries)', () => {
       result.estimatedTokens <= DEFAULT_MEMORY_BUDGET.hardMaxTokens,
       n + ' entries: ' + result.estimatedTokens + ' <= ' + DEFAULT_MEMORY_BUDGET.hardMaxTokens,
     )
-    assert.equal(result.total, Math.ceil((n * 3) / 4), 'notes excluded from candidates')
+    assert.equal(result.total, fixture(n).filter(e => e.section === 'actions' || e.section === 'lessons').length, 'work and notes excluded from candidates')
   }
 })
 
@@ -147,20 +164,20 @@ test('oversized single entry is truncated into the hard cap', () => {
   assert.ok(result.text.includes('…'), 'truncation marker present')
 })
 
-test('work entries are injected exactly once (Recent state only)', () => {
+test('work entries are excluded while actions and lessons remain', () => {
   const entries: MemoirEntry[] = [
     { id: 'w1', section: 'work', content: '做了插件', time: 300 },
     { id: 'a1', section: 'actions', content: '发布前跑测试', time: 200 },
     { id: 'l1', section: 'lessons', content: '先查契约', time: 100 },
   ]
   const result = selectHotMemory(entries, DEFAULT_MEMORY_BUDGET, 400)
-  assert.ok(result.text.includes('做了插件'))
-  assert.equal((result.text.match(/做了插件/g) ?? []).length, 1, 'work appears once')
+  assert.doesNotMatch(result.text, /做了插件/)
+  assert.equal(result.total, 2)
   assert.ok(!result.text.includes('Work:'), 'no legacy Work: group')
-  assert.ok(result.text.includes('Recent state:'))
+  assert.doesNotMatch(result.text, /Recent state:/)
 })
 
-test('newest work survives a flood of actions/lessons (Recent-state floor)', () => {
+test('even the newest work stays out of automatic injection', () => {
   const now = 1_700_000_000_000 + 10_000_000
   const entries: MemoirEntry[] = [
     { id: 'newest-work', section: 'work', content: '保底的工作状态', time: now - 1 },
@@ -171,8 +188,8 @@ test('newest work survives a flood of actions/lessons (Recent-state floor)', () 
   }
   const result = selectHotMemory(entries, DEFAULT_MEMORY_BUDGET, now)
   assert.ok(
-    result.selected.some((e) => e.id === 'newest-work'),
-    'newest work entry is selected despite 120 ranked actions/lessons',
+    !result.selected.some((e) => e.id === 'newest-work'),
+    'work is query-only',
   )
 })
 
@@ -196,4 +213,3 @@ test('truncateEntryToBudget fits an oversized entry into a small ceiling', () =>
   assert.ok(truncated.content.endsWith('…'), 'truncation marker present')
   assert.ok(estimateTokens(renderHotMemory([truncated])) <= 50, 'rendered single-entry block fits 50 tokens')
 })
-

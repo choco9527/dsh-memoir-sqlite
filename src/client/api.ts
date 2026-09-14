@@ -127,10 +127,15 @@ export interface WireDiagnostics {
 export interface WireMemoirSettings {
   language: 'zh' | 'en'
   announceToAgent: boolean
-  autoDistill: boolean
-  autoDistillEvery: number
-  autoDistillCooldownMin: number
-  autoDistillMinTools: number
+  /**
+   * Legacy turn-end distillation fields. The host still reports them so an
+   * older profile keeps round-tripping, but no settings surface sends them and
+   * nothing can switch the retired behaviour back on.
+   */
+  autoDistill?: boolean
+  autoDistillEvery?: number
+  autoDistillCooldownMin?: number
+  autoDistillMinTools?: number
   hotMemoryTokens: number
   hotMemoryMaxTokens: number
   readDefaultLimit: number

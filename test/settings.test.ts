@@ -1,23 +1,63 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { MemoirSettingsStore, SETTINGS_VERSION, resolveMemoirSettings, validateMemoirSettingsPatch } from '../lib/settings.js'
+import { DEFAULT_MEMOIR_SETTINGS, MemoirSettingsStore, SETTINGS_VERSION, resolveMemoirSettings, validateMemoirSettingsPatch } from '../lib/settings.js'
 import { makeTempStorePath } from './helpers.ts'
 
 const defaults = {
   language: 'zh' as const,
   announceToAgent: true,
-  autoDistill: true,
+  autoDistill: false,
   autoDistillEvery: 1,
   autoDistillCooldownMin: 0,
   autoDistillMinTools: 1,
-  hotMemoryTokens: 900,
-  hotMemoryMaxTokens: 1200,
-  readDefaultLimit: 8,
+  hotMemoryTokens: 300,
+  hotMemoryMaxTokens: 500,
+  readDefaultLimit: 3,
   readMaxLimit: 30,
   sessionSnapshotMax: 128,
   queryCacheSize: 128,
 }
+
+test('conservative defaults are shared and legacy enablement is ignored', () => {
+  assert.deepEqual(defaults, DEFAULT_MEMOIR_SETTINGS)
+  assert.equal(resolveMemoirSettings({ autoDistill: true }, defaults).autoDistill, false)
+})
+
+test('legacy saved defaults shrink lazily without rewriting the original file', () => {
+  for (const version of [2, 3]) {
+    const path = makeTempStorePath()
+    try {
+      const original = JSON.stringify({ ...defaults, version, autoDistill: true,
+        hotMemoryTokens: 900, hotMemoryMaxTokens: 1200, readDefaultLimit: 8 })
+      writeFileSync(path, original)
+      const store = new MemoirSettingsStore(defaults, path)
+      assert.equal(store.get().settings.autoDistill, false)
+      assert.equal(store.get().settings.hotMemoryTokens, 300)
+      assert.equal(store.get().settings.hotMemoryMaxTokens, 500)
+      assert.equal(store.get().settings.readDefaultLimit, 3)
+      assert.equal(readFileSync(path, 'utf8'), original)
+      assert.equal(store.update({ autoDistill: true }).settings.autoDistill, false)
+      assert.equal(JSON.parse(readFileSync(path, 'utf8')).version, SETTINGS_VERSION)
+    } finally { rmSync(path, { force: true }) }
+  }
+})
+
+test('custom legacy budgets and new explicit budgets remain configurable', () => {
+  for (const version of [3, SETTINGS_VERSION]) {
+    const path = makeTempStorePath()
+    try {
+      const target = version === 3 ? 600 : 900
+      const max = version === 3 ? 800 : 1200
+      writeFileSync(path, JSON.stringify({ ...defaults, version,
+        hotMemoryTokens: target, hotMemoryMaxTokens: max, readDefaultLimit: 5 }))
+      const store = new MemoirSettingsStore(defaults, path)
+      assert.equal(store.get().settings.hotMemoryTokens, target)
+      assert.equal(store.get().settings.hotMemoryMaxTokens, max)
+      assert.equal(store.get().settings.readDefaultLimit, 5)
+    } finally { rmSync(path, { force: true }) }
+  }
+})
 
 test('MemoirSettingsStore persists complete Web overrides and resets to startup defaults', () => {
   const path = makeTempStorePath()

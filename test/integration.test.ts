@@ -1,6 +1,6 @@
 /**
  * Integration tests: the full host apply() against a mock cordis context —
- * tools register, routes register, the auto-distill listener mounts, the
+ * tools register, routes register, no turn-end listener mounts, the
  * prompt section provider injects the project memory, and the
  * enabled/announceToAgent/autoDistill switches behave.
  */
@@ -66,7 +66,7 @@ function applyTest(ctx: ReturnType<typeof makeCtx>, config: Config = {}): void {
   })
 }
 
-test('apply mounts lifecycle tools, one prefix route, one prompt section, and the auto-distill listener', () => {
+test('apply mounts lifecycle tools, one prefix route, one prompt section, without a turn-end listener', () => {
   const ctx = makeCtx()
   applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: true })
   assert.deepEqual(ctx.registeredTools.map((t) => t.name), ['memoir_record', 'memoir_update', 'memoir_read'])
@@ -76,7 +76,7 @@ test('apply mounts lifecycle tools, one prefix route, one prompt section, and th
   assert.equal(ctx.sections[0]?.name, 'plugin:dsh-memoir-sqlite')
   assert.equal(ctx.sections[0]?.order, 150)
   assert.equal(typeof ctx.sections[0]?.text, 'function')
-  assert.deepEqual(ctx.listeners.map((l) => l.name), ['agent/turn-stopping'])
+  assert.deepEqual(ctx.listeners, [])
 })
 
 test('apply with enabled=false mounts nothing', () => {
@@ -108,16 +108,16 @@ test('apply with announceToAgent=false keeps workspace tracking but emits no pro
   const provider = ctx.sections[0]?.text
   assert.equal(typeof provider, 'function')
   assert.equal((provider as (context: unknown) => string)({ agent: { session: { header: { cwd: 'C:\\workspace' } } } }), '')
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 0)
 })
 
-test('apply with autoDistill=false keeps an inert listener for live Web enablement', () => {
+test('apply with autoDistill=false does not register a turn-end listener', () => {
   const ctx = makeCtx()
   applyTest(ctx, { enabled: true, announceToAgent: true, autoDistill: false })
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.registeredRoutes.length, 1)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 0)
   const messages: unknown[] = []
   ctx.listeners[0]?.listener({
     agent: { id: 'disabled', session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] }, steer: (message: unknown) => messages.push(message) },
@@ -127,15 +127,15 @@ test('apply with autoDistill=false keeps an inert listener for live Web enableme
   assert.equal(messages.length, 0)
 })
 
-test('defaults: enabled and autoDistill are on when config is absent', () => {
+test('defaults: memory tools are enabled without turn-end distillation', () => {
   const ctx = makeCtx()
   applyTest(ctx)
   assert.equal(ctx.registeredTools.length, 3)
   assert.equal(ctx.sections.length, 1)
-  assert.equal(ctx.listeners.length, 1)
+  assert.equal(ctx.listeners.length, 0)
 })
 
-test('agent language switches tools, prompt guidance, and auto-distill live', async () => {
+test('agent language switches tools and prompt guidance live', async () => {
   const ctx = makeCtx()
   applyTest(ctx, { language: 'zh' })
   assert.match(ctx.registeredTools[0]!.description, /记忆/)
@@ -159,54 +159,16 @@ test('agent language switches tools, prompt guidance, and auto-distill live', as
   assert.match(provider({}), /explicitly asks to remember/)
   assert.doesNotMatch(provider({}), /[\u3400-\u9fff]/u)
 
-  const messages: Array<{ content?: Array<{ text?: string }> }> = []
-  ctx.listeners[0]!.listener({
-    agent: {
-      id: 'english-agent',
-      session: { header: {}, events: [{ type: 'tool/call', data: { turn: 1, name: 'read' } }] },
-      steer: (message: { content?: Array<{ text?: string }> }) => messages.push(message),
-    },
-    turn: 1,
-    signal: new AbortController().signal,
-  })
-  assert.match(messages[0]!.content![0]!.text!, /automatic wrap-up/i)
-  assert.match(messages[0]!.content![0]!.text!, /Do not automatically record task progress, Job IDs/)
-  assert.match(messages[0]!.content![0]!.text!, /with no qualified candidate, call no memory tools/)
-  assert.doesNotMatch(messages[0]!.content![0]!.text!, /[\u3400-\u9fff]/u)
+  assert.equal(ctx.listeners.length, 0)
 })
 
-test('apply forwards auto-distill frequency config to the turn-end listener', () => {
+test('legacy profile cannot re-enable turn-end distillation', () => {
   const ctx = makeCtx()
-  applyTest(ctx, {
-    enabled: true,
-    announceToAgent: false,
-    autoDistill: true,
-    autoDistillEvery: 2,
-    autoDistillCooldownMin: 0,
-    autoDistillMinTools: 2,
-  })
-  const listener = ctx.listeners[0]?.listener
-  assert.ok(listener)
-  const messages: unknown[] = []
-  const events = [
-    { type: 'tool/call', data: { turn: 1, name: 'read' } },
-    { type: 'tool/call', data: { turn: 2, name: 'read' } },
-    { type: 'tool/call', data: { turn: 2, name: 'write' } },
-  ]
-  const agent = {
-    id: 'configured-agent',
-    session: { header: {}, events },
-    steer: (message: unknown) => { messages.push(message) },
-  }
-  const signal = new AbortController().signal
-
-  listener({ agent, turn: 1, signal })
-  assert.equal(messages.length, 0)
-  listener({ agent, turn: 2, signal })
-  assert.equal(messages.length, 1)
+  applyTest(ctx, { autoDistill: true, autoDistillEvery: 1 })
+  assert.deepEqual(ctx.listeners, [])
 })
 
-test('Web settings update the mounted auto-distill lifecycle without a restart', async () => {
+test('Web settings change budgets without re-enabling turn-end distillation', async () => {
   const ctx = makeCtx()
   const storePath = makeTempStorePath()
   const settingsPath = makeTempStorePath()
@@ -220,22 +182,9 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
       storePath,
       settingsPath,
     })
-    const listener = ctx.listeners[0]?.listener
     const route = ctx.registeredRoutes[0]
-    assert.ok(listener)
+    assert.deepEqual(ctx.listeners, [])
     assert.ok(route)
-    const messages: unknown[] = []
-    const agent = {
-      id: 'live-settings-agent',
-      session: { header: {}, events: [
-        { type: 'tool/call', data: { turn: 1, name: 'read' } },
-        { type: 'tool/call', data: { turn: 2, name: 'read' } },
-      ] },
-      steer: (message: unknown) => messages.push(message),
-    }
-    const signal = new AbortController().signal
-    listener({ agent, turn: 1, signal })
-    assert.equal(messages.length, 0)
 
     const updated = await callRoute(route.handler, {
       method: 'PUT',
@@ -256,11 +205,11 @@ test('Web settings update the mounted auto-distill lifecycle without a restart',
       }),
     })
     assert.equal(updated.status, 200)
-    listener({ agent, turn: 2, signal })
-    assert.equal(messages.length, 1)
+    assert.deepEqual(ctx.listeners, [])
 
     const diagnostics = await callRoute(route.handler, { url: '/api/dsh-memoir/diagnostics' })
-    const liveConfig = (diagnostics.envelope.value as { config: { autoDistillEvery: number; hotMemoryTokens: number; sessionSnapshotMax: number; queryCacheSize: number } }).config
+    const liveConfig = (diagnostics.envelope.value as { config: { autoDistill: boolean; autoDistillEvery: number; hotMemoryTokens: number; sessionSnapshotMax: number; queryCacheSize: number } }).config
+    assert.equal(liveConfig.autoDistill, false)
     assert.equal(liveConfig.autoDistillEvery, 1)
     assert.equal(liveConfig.hotMemoryTokens, 500)
     assert.equal(liveConfig.sessionSnapshotMax, 32)
@@ -376,10 +325,10 @@ test('no snapshot manager: every assembly builds fresh (compat)', () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
-    store.record(ws.cwd, { section: 'work', content: '第一条' })
+    store.record(ws.cwd, { section: 'actions', content: '第一条' })
     const ctx = { agent: { session: { id: 'sess-X', header: { cwd: ws.cwd } } } }
     const a = memoirSectionText(store, ctx)
-    store.record(ws.cwd, { section: 'work', content: '第二条' })
+    store.record(ws.cwd, { section: 'actions', content: '第二条' })
     const b = memoirSectionText(store, ctx)
     assert.ok(b.includes('第二条'), 'without a manager the latest memory shows up')
     assert.ok(a.includes('第一条'))

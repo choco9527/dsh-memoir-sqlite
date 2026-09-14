@@ -4,9 +4,9 @@
 
 [中文](./README.md) · English · [Changelog](./CHANGELOG.md)
 
-**A SQLite-backed, cross-session project-memory plugin for DeepSeek Harness (DSH).** It curates lasting preferences, verified lessons, and user-approved reusable workflows, also supports explicitly requested records, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through CJK-aware local BM25 ranking.
+**A SQLite-backed, cross-session project-memory plugin for DeepSeek Harness (DSH).** It saves explicit memory requests, lasting preferences, and corrections to lasting rules, injects bounded cache-friendly Hot Memory into new sessions, and retrieves long-tail history through CJK-aware local BM25 ranking.
 
-This project is forked from [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir). It preserves automatic distillation, Hot Memory, CJK BM25, lifecycle management, and the native Web GUI while replacing the structured source of truth with Node's built-in `node:sqlite`. It needs no ORM, embeddings, vector database, or cloud memory service.
+This project is forked from [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir). It preserves Hot Memory, CJK BM25, lifecycle management, and the native Web GUI while replacing the structured source of truth with Node's built-in `node:sqlite`. It needs no ORM, embeddings, vector database, or cloud memory service.
 
 > [!IMPORTANT]
 > The current source targets `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`. It exposes the same tools and UI identifiers as upstream `dsh-memoir`; do not enable both in one profile.
@@ -18,7 +18,7 @@ Build from source and install through `link:` or a tarball as shown below. Memor
 | Capability | What you get |
 | --- | --- |
 | Local-first storage | A SQLite source of truth plus per-project `PROJECT_MEMORY.md` projections; no memory upload or external service |
-| Automatic distill reminder | Reminds the top-level agent after a worked turn, then persists transparently through `memoir_record`; skips idle, aborted, subagent, and already-recorded turns |
+| Conservative admission | Save explicit requests, lasting preferences, and rule corrections without turn-end review |
 | Bounded Hot Memory | Only high-value memory enters the system prompt under a hard token limit; a frozen session prefix improves prompt-prefix cache hits |
 | BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
 | Governable memory | Importance, pinning, tags, archive/restore, and supersede lifecycle; similar writes require an explicit update, replacement, or keep-both decision |
@@ -32,8 +32,8 @@ It fits personal and local development workflows where a new agent should contin
 ## How it works
 
 ```text
-worked turn
-    │  automatic distill reminder
+explicit memory request / lasting preference / rule correction
+    │  on-demand memory tool call
     ▼
 memoir_record / memoir_update
     │
@@ -48,7 +48,7 @@ memoir_record / memoir_update
 SQLite stores projects, entries, versions, and mutation audit rows; `PROJECT_MEMORY.md` is a readable projection. Complete history and Hot Memory are separate layers:
 
 - **Full Memory** retains every record for the GUI, human review, Markdown projection, and ranked retrieval.
-- **Hot Memory** selects only budgeted actions, lessons, and recent state; the full `PROJECT_MEMORY.md` is never injected.
+- **Hot Memory** selects only budgeted actions and lessons; the full `PROJECT_MEMORY.md` is never injected.
 - **Session Snapshot** freezes injected text within a session. New writes are immediately readable by tools and the GUI, while automatic injection refreshes in the next new session.
 
 ## Agent tools and memory lifecycle
@@ -67,17 +67,15 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 - `supersede`: retain old history and mark it as replaced by the new record;
 - `force-record`: explicitly keep both.
 
-## Automatic distillation
+## Conservative admission
 
-Automatic distillation is an observable review of lasting value, not an automatic work log or silent background scraping. The default `1 / 0 / 1` means every eligible worked turn, no extra cooldown, and at least one tool call; a reminder does not require a write.
+No turn-end listener is registered, so memory review adds no model call or maintenance reply. Legacy autoDistill settings are accepted but resolved to false; cadence fields are inert and no longer shown as controls.
 
-Automatic admission is limited to explicit long-term user preferences and constraints, verified reusable lessons not covered by existing rules, and user-approved workflows with future reuse. Task progress, Job IDs, delivery paths, generation timings, temporary choices, pending authorization, to-dos, and routine results remain in conversation and task records; one choice does not establish a lasting preference. Candidates must remain useful across tasks and add to existing documentation or memory. When uncertain, do not write. Assess value before looking up duplicates; prefer updating confirmed corrections.
+Save only explicit requests to remember, clearly stated long-term preferences, or corrections to lasting rules. Use one concise rule per item, do not infer preferences from a single choice, and do not automatically save lessons or task progress. Read only for a specific historical need or to check a qualified candidate for duplication. Admission remains model-guided rather than a database semantic filter.
 
-Explicit requests to remember something are honored only within the requested scope, including task-specific content. Existing `work / lessons / actions / note` categories and manual editing remain supported; old memory is neither migrated nor cleaned up. Consistent system guidance, turn-end reminders, and tool descriptions guide admission, rather than a database-level semantic filter. Cadence controls review timing only. Plugin updates require a host reload, and frozen prompt snapshots refresh in a new session.
+Existing entries are preserved and remain queryable. Automatic injection includes actions and lessons only, not work records or notes. Default estimated hot-memory budgets are 300 target / 500 maximum, excluding plugin guidance and tool descriptions; memoir_read returns 3 entries by default. Explicit profile/custom budgets still apply. Settings files v1–v3 are read without rewriting: the old saved 900/1200 pair and default read count 8 migrate to 300/500 and 3, while custom values remain. Saving writes v4.
 
-`autoDistillEvery`, `autoDistillCooldownMin`, and `autoDistillMinTools` are AND conditions isolated per agent. Idle, aborted, subagent, and already-recorded turns do not trigger. Cooldown advances only after a successful reminder. All cadence parameters are live-editable in the GUI.
-
-`language` independently controls agent-visible tool descriptions and parameters, the distillation prompt, tool results, Hot Memory / `PROJECT_MEMORY.md` headings, and validation or governance errors. It defaults to `zh` for backward compatibility and can be switched to `en` in the GUI. Tool schemas and subsequent prompts update live without restarting DSH.
+Host reload is required for plugin updates; already frozen prompt snapshots refresh in a new session. The language setting switches agent-facing copy live without changing Web UI language.
 
 ## Local recall and caching
 
@@ -157,7 +155,7 @@ On the first default-path start, an empty database automatically imports `$DSH_H
 
 ## Configuration
 
-Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for `enabled` and `showConversationView`, each is also live-editable and persisted from the Memory panel or Settings card.
+Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for retired `autoDistill*`, `enabled` and `showConversationView`, each is also live-editable and persisted from the Memory panel or Settings card.
 
 | Field | Default | Purpose |
 | --- | ---: | --- |
@@ -165,13 +163,10 @@ Every field below can be set in the memoir `config` row in `cordis.patch.yml`. E
 | `showConversationView` | `true` | register the per-conversation Memory view; the Settings section always remains available |
 | `language` | `zh` | agent-facing prompt, tool schema/result, projection-heading, and error language; `zh` or `en` |
 | `announceToAgent` | `true` | announce memory tools and rules to the agent |
-| `autoDistill` | `true` | enable top-level worked-turn reminders |
-| `autoDistillEvery` | `1` | remind at most once per N worked turns |
-| `autoDistillCooldownMin` | `0` | minimum minutes between successful reminders |
-| `autoDistillMinTools` | `1` | minimum tool calls required in a triggering turn |
-| `hotMemoryTokens` | `900` | normal Hot Memory target budget |
-| `hotMemoryMaxTokens` | `1200` | hard ceiling that no session exceeds |
-| `readDefaultLimit` | `8` | default `memoir_read` result count |
+| `autoDistill*` | — | legacy compatibility fields; turn-end review is disabled |
+| `hotMemoryTokens` | `300` | normal Hot Memory target budget |
+| `hotMemoryMaxTokens` | `500` | hard ceiling that no session exceeds |
+| `readDefaultLimit` | `3` | default `memoir_read` result count |
 | `readMaxLimit` | `30` | live upper bound per recall |
 | `sessionSnapshotMax` | `128` | frozen session-snapshot LRU capacity |
 | `queryCacheSize` | `128` | BM25 query LRU capacity |

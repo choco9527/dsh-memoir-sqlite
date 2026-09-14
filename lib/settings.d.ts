@@ -9,12 +9,13 @@
  * when the plugin mounted.
  */
 import type { MemoirLanguage } from './i18n.js';
-export declare const SETTINGS_VERSION = 3;
+export declare const SETTINGS_VERSION = 4;
 /** Every setting that v0.5.4 can change live from the GUI. */
 export interface MemoirSettings {
     /** Language used in prompts, tool schemas/results, and agent-facing errors. */
     language: MemoirLanguage;
     announceToAgent: boolean;
+    /** Legacy field; turn-end distillation is no longer supported. */
     autoDistill: boolean;
     autoDistillEvery: number;
     autoDistillCooldownMin: number;

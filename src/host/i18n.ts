@@ -125,20 +125,16 @@ export interface HostCopy {
 
 // Keep the same admission policy in system guidance, steering, and the write tool.
 const zhMemoryPolicy =
-  '目标是精选长期记忆，不是工作日志。自动写入仅限：用户明确的长期偏好与约束、已验证且现有规则未覆盖的可复用经验、用户认可且未来可复用的新流程。' +
-  '候选必须长期有效、能跨任务复用，且不重复现有工具说明、流程或记忆；有新事实或完成任务本身不是写入理由。' +
-  '不自动记录任务进度、Job ID、交付路径、生成耗时、临时选择、待授权状态、待办和普通执行结果；不要把一次选择推断为长期偏好。' +
-  '历史任务细节留在会话和任务记录中，不为接续任务复制到长期记忆。先判断价值，再按需用 memoir_read 检查重复；已有相同内容则不新增，已确认的纠正优先更新原条目。' +
-  '不确定是否值得长期保存时不写；没有合格候选时不调用记忆工具，不为完成提醒而凑记录。' +
-  '用户明确要求“记住”某项内容时，可按其指定范围记录，即使只是本次任务；不要扩大范围。'
+  '精选长期记忆，默认不写。仅在用户明确要求“记住”、明确表达长期偏好或纠正长期规则时保存，严格限于指定范围。' +
+  '不从一次选择推断偏好；不自动记录经验总结、任务进度、Job ID、路径、待办或执行结果。' +
+  '每项用一句简短规则，不复制对话；不确定就不写。先判断是否符合收录条件，再按需用 memoir_read 查重，相同内容不新增，纠正优先更新。' +
+  '没有明确的历史信息需求不读记忆；自动记忆操作不另发状态回复。'
 
 const enMemoryPolicy =
-  'Use curated long-term memory, not a work log. Automatic writes are limited to explicit user long-term preferences and constraints, verified reusable lessons not covered by existing rules, and user-approved new workflows with future reuse. ' +
-  'Candidates must remain useful across tasks and add to existing tool documentation, workflows, and memory; a new fact or completed task alone is not a reason to write. ' +
-  'Do not automatically record task progress, Job IDs, delivery paths, generation timings, temporary choices, pending authorization, to-dos, or routine results; never infer a lasting preference from one choice. ' +
-  'Leave task details in conversation and task records instead of copying them into long-term memory for handoff. Assess value first, then use memoir_read only as needed to check duplicates; skip identical content and prefer updating a confirmed correction. ' +
-  'If uncertain about lasting value, do not write; with no qualified candidate, call no memory tools and do not invent an entry to satisfy the reminder. ' +
-  'When the user explicitly asks to remember something, record only the requested scope, even if task-specific; do not broaden it.'
+  'Use curated long-term memory; do not write by default. Save only when the user explicitly asks to remember something, states a long-term preference, or corrects a lasting rule, within that scope. ' +
+  'Never infer preferences from one choice or automatically save lessons, task progress, Job IDs, paths, to-dos, or results. ' +
+  'Use one concise rule per item, not copied conversation. If uncertain, do not write. Check admission first; use memoir_read for deduplication only as needed, skip identical entries, and update corrections. ' +
+  'Read memory only for a specific historical information need; do not send separate status replies for automatic memory operations.'
 
 const zh: HostCopy = {
   guidance:

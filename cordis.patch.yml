@@ -6,25 +6,22 @@
 #
 # The row is a bare plugin by package name: the node half (exports ".")
 # registers the memoir_record / memoir_read tools, the /api/dsh-memoir panel
-# routes, the turn-end auto-distill listener, and the per-project
+# routes and the per-project
 # system-prompt announcement; the browser half (exports "./client") registers
 # a native conversation.view plus a native settings.section.
 #
-# Optional config (all default true):
+# Optional config:
 #   config:
 #     enabled: true          # master switch (tools, routes, prompt section)
 #     showConversationView: true # register the per-conversation Memory tab
 #     language: zh           # agent-facing copy: zh (default) or en
 #     announceToAgent: true  # system-prompt announcement
-#     autoDistill: true      # steer a distill prompt after each worked turn
-#     autoDistillEvery: 1    # remind at most once per N worked turns
-#     autoDistillCooldownMin: 0 # minimum minutes between successful reminders
-#     autoDistillMinTools: 1 # minimum tool calls on the triggering turn
+# Turn-end distillation is retired; legacy autoDistill* fields cannot enable it.
 # All fields except enabled are startup defaults. v0.5.4+ can persist complete
 # live overrides from the Memory Conversation view or native Settings section:
-#   hotMemoryTokens: 900
-#   hotMemoryMaxTokens: 1200
-#   readDefaultLimit: 8
+#   hotMemoryTokens: 300
+#   hotMemoryMaxTokens: 500
+#   readDefaultLimit: 3
 #   readMaxLimit: 30
 #   sessionSnapshotMax: 128
 #   queryCacheSize: 128

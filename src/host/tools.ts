@@ -7,7 +7,7 @@
  *
  * v0.3.1: section headers no longer duplicate "##"; project/global reads are
  * bounded by internal hard caps; descriptions and renders are trimmed.
- * v0.4.0: memoir_read gains limit (default 8, max 30) and detail
+ * memoir_read supports limit (default 3, max 30) and detail
  * (compact default / full) so reads are cheap by default.
  */
 
@@ -22,6 +22,7 @@ import type { SimilarityCandidate } from './similarity.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
 import { sessionEventSnapshot } from './autodistill.js'
+import { DEFAULT_MEMOIR_SETTINGS } from './settings.js'
 
 /** One text content block (the only render shape these tools emit). */
 export function text(value: string): ContentBlock[] {
@@ -408,7 +409,7 @@ export function memoirReadTool(
   const currentLanguage = (): MemoirLanguage => languageFrom(languageSource)
   const currentOptions = (): ReadToolOptions => {
     const value = typeof options === 'function' ? options() : options
-    const defaultLimit = Math.max(1, Math.floor(value?.defaultLimit ?? 8))
+    const defaultLimit = Math.max(1, Math.floor(value?.defaultLimit ?? DEFAULT_MEMOIR_SETTINGS.readDefaultLimit))
     const maxLimit = Math.max(defaultLimit, Math.floor(value?.maxLimit ?? 30))
     return { defaultLimit, maxLimit }
   }
@@ -547,4 +548,3 @@ export function memoirReadTool(
     },
   })
 }
-

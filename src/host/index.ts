@@ -1,12 +1,12 @@
 /**
  * dsh-memoir-sqlite — host half.
  *
- * 把「一个会话做了什么 / 踩了什么坑 / 下一步怎么走」沉淀为项目持久化记忆，
+ * 按用户明确要求、长期偏好和长期规则纠正保存精选项目记忆，
  * 并作为未来 AGENTS 的行动指南：
  *   - 人类可读投影：<工作区>/PROJECT_MEMORY.md（可随 git 提交，不整份注入）
  *   - 结构化存储：$DSH_HOME/dsh-memoir-sqlite/memory.db（SQLite）
  *   - 面板 API：/api/dsh-memoir/*（浏览器「记忆」面板读写 + diagnostics）
- *   - 自动收尾：每轮有实际工作的 turn 结束时，steer 一句归纳提示
+ *   - 不追加轮末沉淀调用；工作记录仅按需查询
  *
  * v0.4.0 cache-aware injection:
  *   - system prompt 只注入 selector 选出的 Hot Memory（token 预算），
@@ -23,7 +23,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the Context merges for tools/systemPrompt/webServer and the
-// agent Events map (agent/turn-stopping).
+// required service types.
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -31,13 +31,11 @@ import type {} from '@deepseek-ai/dsh-agent'
 import { MemoirStore, projectKey } from './store.js'
 import { memoirReadTool, memoirRecordTool, memoirUpdateTool } from './tools.js'
 import { makeRoutes } from './routes.js'
-import { installAutoDistill } from './autodistill.js'
-import type { AutoDistillWire, TurnStoppingPayload } from './autodistill.js'
 import { MemorySnapshotManager, sessionKeyOf } from './snapshot.js'
 import { DEFAULT_MEMORY_BUDGET, selectHotMemory } from './selector.js'
 import type { MemoryBudget } from './selector.js'
 import { RetrievalEngine } from './retrieval.js'
-import { MemoirSettingsStore } from './settings.js'
+import { DEFAULT_MEMOIR_SETTINGS, MemoirSettingsStore } from './settings.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, resolveMemoirLanguage } from './i18n.js'
 import type { MemoirLanguage } from './i18n.js'
 
@@ -60,7 +58,7 @@ export interface Config {
   language?: MemoirLanguage
   /** When true (default), a system-prompt section announces the plugin. */
   announceToAgent?: boolean
-  /** When true (default), turns with real work are auto-distilled at turn end. */
+  /** @deprecated Accepted for old profiles; turn-end distillation is disabled. */
   autoDistill?: boolean
   /** Remind after every N eligible worked turns per agent (default 1, minimum 1). */
   autoDistillEvery?: number
@@ -69,11 +67,11 @@ export interface Config {
   /** Minimum tool calls required on the triggering turn (default 1, minimum 1). */
   autoDistillMinTools?: number
   // v0.4 — cache-aware injection
-  /** Hot-memory soft target tokens (default 900). */
+  /** Hot-memory soft target tokens (default 300). */
   hotMemoryTokens?: number
-  /** Hot-memory hard ceiling tokens (default 1200). */
+  /** Hot-memory hard ceiling tokens (default 500). */
   hotMemoryMaxTokens?: number
-  /** memoir_read default result count (default 8). */
+  /** memoir_read default result count (default 3). */
   readDefaultLimit?: number
   /** memoir_read maximum result count (default 30). */
   readMaxLimit?: number
@@ -90,7 +88,6 @@ export interface Config {
 
 const DEFAULT_ENABLED = true
 const DEFAULT_ANNOUNCE = true
-const DEFAULT_AUTO_DISTILL = true
 const DEFAULT_AUTO_DISTILL_EVERY = 1
 const DEFAULT_AUTO_DISTILL_COOLDOWN_MIN = 0
 const DEFAULT_AUTO_DISTILL_MIN_TOOLS = 1
@@ -130,7 +127,7 @@ export interface ResolvedConfig {
 function resolveConfig(config: Config | undefined): ResolvedConfig {
   const target = Math.max(1, Math.floor(config?.hotMemoryTokens ?? DEFAULT_MEMORY_BUDGET.targetTokens))
   const hardMax = Math.max(target, Math.floor(config?.hotMemoryMaxTokens ?? DEFAULT_MEMORY_BUDGET.hardMaxTokens))
-  const readDefaultLimit = Math.max(1, Math.floor(config?.readDefaultLimit ?? 8))
+  const readDefaultLimit = Math.max(1, Math.floor(config?.readDefaultLimit ?? DEFAULT_MEMOIR_SETTINGS.readDefaultLimit))
   const readMaxLimit = Math.max(readDefaultLimit, Math.floor(config?.readMaxLimit ?? 30))
   const integerAtLeast = (value: number | undefined, fallback: number, minimum: number): number =>
     typeof value === 'number' && Number.isFinite(value) ? Math.max(minimum, Math.floor(value)) : fallback
@@ -141,7 +138,7 @@ function resolveConfig(config: Config | undefined): ResolvedConfig {
     showConversationView: config?.showConversationView ?? true,
     language: resolveMemoirLanguage(config?.language),
     announceToAgent: config?.announceToAgent ?? DEFAULT_ANNOUNCE,
-    autoDistill: config?.autoDistill ?? DEFAULT_AUTO_DISTILL,
+    autoDistill: false,
     autoDistillEvery: integerAtLeast(config?.autoDistillEvery, DEFAULT_AUTO_DISTILL_EVERY, 1),
     autoDistillCooldownMin: numberAtLeast(config?.autoDistillCooldownMin, DEFAULT_AUTO_DISTILL_COOLDOWN_MIN, 0),
     autoDistillMinTools: integerAtLeast(config?.autoDistillMinTools, DEFAULT_AUTO_DISTILL_MIN_TOOLS, 1),
@@ -199,15 +196,8 @@ export function memoirSectionText(
   return manager.getOrCreate(key, build).text
 }
 
-/** Bridge the cordis context onto the autodistill wire contract. */
-function autoDistillWire(ctx: Context): AutoDistillWire {
-  return {
-    on: (name, listener: (payload: TurnStoppingPayload) => void) => ctx.on(name, listener),
-  }
-}
-
 /**
- * Mount the memory tools, the panel routes, the auto-distill listener, and
+ * Mount the memory tools, the panel routes, and
  * the per-project announcement.
  * @param ctx - host plugin context carrying tools/systemPrompt/webServer.
  * @param config - resolved plugin config (defaults apply when absent).
@@ -347,22 +337,6 @@ export function apply(ctx: Context, config?: Config): void {
       for (const dispose of disposers) dispose()
     }
   }, 'dsh-memoir-sqlite: routes')
-
-  ctx.effect(
-    () => installAutoDistill(autoDistillWire(ctx), {
-      enabled: () => liveSettings.get().settings.autoDistill,
-      policy: () => {
-        const current = liveSettings.get().settings
-        return {
-          every: current.autoDistillEvery,
-          cooldownMin: current.autoDistillCooldownMin,
-          minTools: current.autoDistillMinTools,
-        }
-      },
-      language: () => liveSettings.get().settings.language,
-    }),
-    'dsh-memoir-sqlite: auto-distill',
-  )
 
   ctx.effect(() => {
     let language = initialLive.language

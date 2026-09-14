@@ -448,9 +448,6 @@ function SimilarityResolution({ result, t, busy, onResolve, onBack }: {
 }
 
 type NumericSettingsKey =
-  | 'autoDistillEvery'
-  | 'autoDistillCooldownMin'
-  | 'autoDistillMinTools'
   | 'hotMemoryTokens'
   | 'hotMemoryMaxTokens'
   | 'readDefaultLimit'
@@ -459,9 +456,6 @@ type NumericSettingsKey =
   | 'queryCacheSize'
 
 const NUMERIC_SETTINGS: NumericSettingsKey[] = [
-  'autoDistillEvery',
-  'autoDistillCooldownMin',
-  'autoDistillMinTools',
   'hotMemoryTokens',
   'hotMemoryMaxTokens',
   'readDefaultLimit',
@@ -484,12 +478,9 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
   const [settings, setSettings] = useState<WireMemoirSettings | null>(null)
   const [source, setSource] = useState<'profile' | 'web'>('profile')
   const [draft, setDraft] = useState<Record<NumericSettingsKey, string>>({
-    autoDistillEvery: '1',
-    autoDistillCooldownMin: '0',
-    autoDistillMinTools: '1',
-    hotMemoryTokens: '900',
-    hotMemoryMaxTokens: '1200',
-    readDefaultLimit: '8',
+    hotMemoryTokens: '300',
+    hotMemoryMaxTokens: '500',
+    readDefaultLimit: '3',
     readMaxLimit: '30',
     sessionSnapshotMax: '128',
     queryCacheSize: '128',
@@ -516,12 +507,9 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
   const save = () => {
     if (settings === null) return
     const parsed = Object.fromEntries(NUMERIC_SETTINGS.map((key) => [key, Number(draft[key])])) as Record<NumericSettingsKey, number>
-    const integerKeys = NUMERIC_SETTINGS.filter((key) => key !== 'autoDistillCooldownMin')
-    const invalidInteger = integerKeys.some((key) => !Number.isSafeInteger(parsed[key]) || parsed[key] < 1)
+    const invalidInteger = NUMERIC_SETTINGS.some((key) => !Number.isSafeInteger(parsed[key]) || parsed[key] < 1)
     if (
       invalidInteger
-      || !Number.isFinite(parsed.autoDistillCooldownMin)
-      || parsed.autoDistillCooldownMin < 0
       || parsed.hotMemoryMaxTokens < parsed.hotMemoryTokens
       || parsed.readMaxLimit < parsed.readDefaultLimit
     ) {
@@ -535,7 +523,6 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
     api.updateSettings({
       language: settings.language,
       announceToAgent: settings.announceToAgent,
-      autoDistill: settings.autoDistill,
       ...parsed,
     })
       .then((value) => {
@@ -595,31 +582,7 @@ export function MemoirSettingsPanel({ api, t, refreshKey, onChanged, defaultOpen
                   />
                   <span><strong>{t('settings.announce')}</strong><small>{t('settings.announceHint')}</small></span>
                 </label>
-                <div className="memoir-settings-group-title">{t('settings.group.distill')}</div>
-                <label className="memoir-settings-switch">
-                  <input
-                    type="checkbox"
-                    checked={settings.autoDistill}
-                    onChange={(event) => setSettings({ ...settings, autoDistill: event.target.checked })}
-                  />
-                  <span><strong>{t('settings.enabled')}</strong><small>{t('settings.enabledHint')}</small></span>
-                </label>
-                <div className="memoir-settings-grid">
-                  {(['autoDistillEvery', 'autoDistillCooldownMin', 'autoDistillMinTools'] as NumericSettingsKey[]).map((key) => (
-                    <label className="memoir-field" key={key}>
-                      <span>{t(`settings.${key}`)}</span>
-                      <input
-                        type="number"
-                        min={key === 'autoDistillCooldownMin' ? '0' : '1'}
-                        step={key === 'autoDistillCooldownMin' ? '0.1' : '1'}
-                        value={draft[key]}
-                        onChange={(event) => setDraft({ ...draft, [key]: event.target.value })}
-                      />
-                      <small>{t(`settings.${key}Hint`)}</small>
-                    </label>
-                  ))}
-                </div>
-                <div className="memoir-settings-note">{t('settings.andHint')}</div>
+                <div className="memoir-settings-note">{t('settings.conservativeHint')}</div>
                 <div className="memoir-settings-group-title">{t('settings.group.memory')}</div>
                 <div className="memoir-settings-grid">
                   {(['hotMemoryTokens', 'hotMemoryMaxTokens', 'readDefaultLimit', 'readMaxLimit', 'sessionSnapshotMax', 'queryCacheSize'] as NumericSettingsKey[]).map((key) => (

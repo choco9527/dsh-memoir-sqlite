@@ -162,7 +162,7 @@ test('memoir_read global with empty store reports empty', async () => {
   assert.ok(value.text.includes('没有匹配的内容'))
 })
 
-test('memoir_read default limit 8 with compact one-line entries', async () => {
+test('memoir_read default limit 3 with compact one-line entries', async () => {
   const ws = makeTempWorkspace()
   try {
     const store = new MemoirStore(makeTempStorePath())
@@ -170,7 +170,7 @@ test('memoir_read default limit 8 with compact one-line entries', async () => {
     const read = memoirReadTool(store)
     const value = (await read.execute({ scope: 'project' }, makeExec(ws.cwd))) as { text: string }
     const bullets = (value.text.match(/^- \[/gm) ?? []).length
-    assert.equal(bullets, 8, 'default limit 8')
+    assert.equal(bullets, 3, 'default limit 3')
     assert.ok(value.text.includes('共 10 条'), 'truncation note present')
     assert.ok(value.text.includes('工作9'), 'newest entries kept')
     assert.ok(!value.text.includes('工作0'), 'oldest dropped')
@@ -292,4 +292,3 @@ test('memoir_record returns candidates before applying an explicit resolution', 
     ws.cleanup()
   }
 })
-
