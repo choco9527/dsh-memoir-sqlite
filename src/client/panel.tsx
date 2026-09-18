@@ -817,7 +817,7 @@ export function MemoirPanel({ controller, api, cwdTracker = EMPTY_CWD_TRACKER, c
   }
 
   const headerSubtitle = surface === 'browse'
-    ? (tab === 'project' ? (cwd === '' ? t('empty.workspace') : cwd) : t('tab.global'))
+    ? (tab === 'project' ? (cwd === '' ? t('empty.workspace') : project?.path ?? cwd) : t('tab.global'))
     : t(PANEL_SURFACES.find((item) => item.id === surface)?.label ?? 'surface.browse')
   const visibleGlobalGroups = displayedGlobalGroups.slice(0, projectLimit)
   const listResetKey = `${tab}:${q}:${statusFilter}:${sectionFilter}:${refreshKey}`

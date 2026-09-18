@@ -11,6 +11,8 @@ import { resolveDshHome } from './dsh-home.js'
 import { DEFAULT_MEMOIR_LANGUAGE, hostCopy, languageFrom, sectionCopy } from './i18n.js'
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js'
 import { SqliteMemoirDatabase } from './sqlite-store.js'
+import { projectKey, projectPathResolver, type ProjectPathRelocation } from './project-path.js'
+export { projectKey } from './project-path.js'
 
 /** Global index format version. */
 export const FORMAT_VERSION = 4
@@ -258,21 +260,6 @@ export function formatTime(ms: number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 
-/**
- * Normalize one workspace path into a stable key:
- * strip trailing separators, unify separators to '/'. Windows drive paths
- * are FULLY lowercased (v0.4.2) — the canonical bucket key of C:\A /
- * c:\a\ / C:/A is 'c:/a', so all case variants share one bucket. The
- * display path stored on the project keeps its original case. POSIX paths
- * are unchanged apart from trailing separators.
- */
-export function projectKey(cwd: string): string {
-  const raw = String(cwd).replace(/[\\/]+$/, '')
-  const drive = /^([A-Za-z]):/.exec(raw)
-  if (drive === null) return raw
-  return (drive[1] + ':' + raw.slice(2)).toLowerCase().replace(/\\/g, '/')
-}
-
 /** Project display title: the last path segment. */
 export function projectTitle(cwd: string): string {
   return projectKey(cwd).split('/').filter(Boolean).pop() || projectKey(cwd)
@@ -438,6 +425,7 @@ export class MemoirStore {
   private renderCount = 0
   private renderComputeCount = 0
   private readonly languageSource: MemoirLanguageSource
+  private readonly resolveProjectPath: (cwd: string) => string
 
   /**
    * @param path - SQLite database path (defaults to the standard location).
@@ -446,7 +434,8 @@ export class MemoirStore {
    * @param options.lockRetryMs / lockTimeoutMs - cross-process mutation lock
    *   tuning (tests shrink these; defaults 25ms / 5000ms).
    */
-  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number; language?: MemoirLanguageSource; legacyJsonPath?: string | false }) {
+  constructor(path?: string, options?: { mtimeCheckIntervalMs?: number; lockRetryMs?: number; lockTimeoutMs?: number; lockStaleAfterMs?: number; language?: MemoirLanguageSource; legacyJsonPath?: string | false; pathRelocations?: readonly ProjectPathRelocation[] }) {
+    this.resolveProjectPath = projectPathResolver(options?.pathRelocations)
     this.path = path ?? defaultStorePath()
     this.mtimeCheckIntervalMs = options?.mtimeCheckIntervalMs ?? DEFAULT_MTIME_CHECK_MS
     this.lockRetryMs = options?.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS
@@ -462,6 +451,15 @@ export class MemoirStore {
   /** Current model-facing language (live when backed by Web settings). */
   language(): MemoirLanguage {
     return languageFrom(this.languageSource)
+  }
+
+  /** Resolve a historical project path without consulting the filesystem. */
+  projectPath(cwd: string): string {
+    return this.resolveProjectPath(cwd)
+  }
+
+  private key(cwd: string): string {
+    return projectKey(this.projectPath(cwd))
   }
 
   /** The cross-process lock file guarding mutations of this store. */
@@ -550,7 +548,7 @@ export class MemoirStore {
     const projects: Record<string, MemoirProject> = {}
     for (const [rawKey, project] of Object.entries(parsed.projects ?? {})) {
       if (typeof project !== 'object' || project === null) continue
-      const key = projectKey(rawKey)
+      const key = this.key(rawKey)
       const rawEntries: unknown[] = Array.isArray(project.entries) ? project.entries : []
       const entries: MemoirEntry[] = rawEntries
         .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
@@ -575,8 +573,9 @@ export class MemoirStore {
               ...(normalizedStrings(e.tags) !== undefined ? { tags: normalizedStrings(e.tags) } : {}),
             }))
       const normalized: MemoirProject = {
-        path: typeof project.path === 'string' && project.path !== '' ? project.path : rawKey,
-        title: typeof project.title === 'string' && project.title !== '' ? project.title : projectTitle(rawKey),
+        path: this.projectPath(typeof project.path === 'string' && project.path !== '' ? project.path : rawKey),
+        title: typeof project.title === 'string' && project.title !== '' && project.title !== projectTitle(rawKey)
+          ? project.title : projectTitle(key),
         updatedAt: typeof project.updatedAt === 'number' ? project.updatedAt : (entries[entries.length - 1]?.time ?? Date.now()),
         entries,
       }
@@ -683,7 +682,7 @@ export class MemoirStore {
 
   /** One project record, or undefined. */
   project(cwd: string): MemoirProject | undefined {
-    return this.load().projects[projectKey(cwd)]
+    return this.load().projects[this.key(cwd)]
   }
 
   /** Entries of one project in insertion order. */
@@ -709,11 +708,11 @@ export class MemoirStore {
     if (error !== undefined) throw new Error(error)
     return this.mutateLocked(() => {
       const store = this.load()
-      const key = projectKey(cwd)
+      const key = this.key(cwd)
       const project = (store.projects[key] ??= {
         // Display path keeps the caller's original case; the bucket key is
         // the canonical (lowercased for Windows) projectKey(cwd).
-        path: cwd,
+        path: this.projectPath(cwd),
         title: projectTitle(key),
         updatedAt: Date.now(),
         entries: [],
@@ -760,7 +759,7 @@ export class MemoirStore {
   remove(cwd: string, id: string): boolean {
     return this.mutateLocked(() => {
       const store = this.load()
-      const key = projectKey(cwd)
+      const key = this.key(cwd)
       const project = store.projects[key]
       if (project === undefined) return false
       const index = project.entries.findIndex((e) => e.id === id)
@@ -777,7 +776,7 @@ export class MemoirStore {
   update(cwd: string, id: string, patch: EntryUpdate): MemoirEntry | undefined {
     return this.mutateLocked(() => {
       const store = this.load()
-      const project = store.projects[projectKey(cwd)]
+      const project = store.projects[this.key(cwd)]
       const entry = project?.entries.find((candidate) => candidate.id === id)
       if (entry === undefined) return undefined
       const updatedAt = Date.now()
@@ -838,7 +837,7 @@ export class MemoirStore {
   /** Regenerate the full PROJECT_MEMORY.md content for one project. */
   renderMarkdown(cwd: string): string {
     this.renderCount++
-    const key = projectKey(cwd)
+    const key = this.key(cwd)
     const project = this.load().projects[key]
     const signature = this.renderSignature(project)
     const cached = this.renderCache.get(key)
@@ -870,7 +869,7 @@ export class MemoirStore {
 
   /** Absolute path of one project's memory file (no write). */
   projectFilePath(cwd: string): string {
-    return join(cwd, PROJECT_FILE)
+    return join(this.projectPath(cwd), PROJECT_FILE)
   }
 
   /** Regenerate and write the project memory file; returns its path. */

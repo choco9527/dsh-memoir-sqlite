@@ -276,11 +276,12 @@ export function makeRoutes(
           json(res, FAIL(BAD_REQUEST), 400)
           return
         }
-        const key = projectKey(path)
+        const canonicalPath = store.projectPath(path)
+        const key = projectKey(canonicalPath)
         const project = store.project(path)
         const filter = entryFilter(section, query, rawStatus as MemoirStatus | 'all')
         const value = project === undefined
-          ? { project: { key, path, title: projectTitle(path), updatedAt: 0, entries: [] } }
+          ? { project: { key, path: canonicalPath, title: projectTitle(canonicalPath), updatedAt: 0, entries: [] } }
           : { project: wireProject(key, project, filter) }
         json(res, OK(value))
         return

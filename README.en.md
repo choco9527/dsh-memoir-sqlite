@@ -155,6 +155,8 @@ On the first default-path start, an empty database automatically imports `$DSH_H
 
 ## Configuration
 
+Embedding hosts can provide completed workspace moves through startup configuration `pathRelocations: [{ from, to }]`. Old and new paths share project memories; the settings panel and Markdown writes use the new path without requiring the old directory, a symlink, or the old App. Entry IDs, provenance, and audit history are retained; the next memory mutation persists the merged project index. Mappings require absolute non-root directories and reject duplicate sources, chains, and cycles. This setting is not exposed in the settings panel.
+
 Every field below can be set in the memoir `config` row in `cordis.patch.yml`. Except for retired `autoDistill*`, `enabled` and `showConversationView`, each is also live-editable and persisted from the Memory panel or Settings card.
 
 | Field | Default | Purpose |

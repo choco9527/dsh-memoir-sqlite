@@ -82,6 +82,8 @@ export interface Config {
   queryCacheSize?: number
   /** @internal Alternate memory-store path for embedded hosts and tests. */
   storePath?: string
+  /** Committed workspace moves supplied by the embedding host; no filesystem aliases are required. */
+  pathRelocations?: readonly import('./project-path.js').ProjectPathRelocation[]
   /** @internal Alternate Web-settings path for embedded hosts and tests. */
   settingsPath?: string
 }
@@ -222,6 +224,7 @@ export function apply(ctx: Context, config?: Config): void {
   }, config?.settingsPath)
   const store = new MemoirStore(config?.storePath, {
     language: () => liveSettings.get().settings.language,
+    pathRelocations: config?.pathRelocations,
   })
   ctx.effect(() => () => store.close(), 'dsh-memoir-sqlite: database')
   const initialLive = liveSettings.get().settings
@@ -233,7 +236,7 @@ export function apply(ctx: Context, config?: Config): void {
   // projects) — a browser-supplied absolute path is not authorization.
   const recentWorkspaces = new Set<string>()
   const touchWorkspace = (path: string): void => {
-    if (typeof path === 'string' && path !== '') recentWorkspaces.add(projectKey(path))
+    if (typeof path === 'string' && path !== '') recentWorkspaces.add(projectKey(store.projectPath(path)))
   }
 
   ctx.effect(() => {
@@ -322,7 +325,7 @@ export function apply(ctx: Context, config?: Config): void {
       }
     }
     const allowedWorkspace = (path: string): boolean =>
-      recentWorkspaces.has(projectKey(path)) || store.project(path) !== undefined
+      recentWorkspaces.has(projectKey(store.projectPath(path))) || store.project(path) !== undefined
     const disposers = makeRoutes(
       store,
       diagnostics,

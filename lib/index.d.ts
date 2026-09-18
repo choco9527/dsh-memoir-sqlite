@@ -61,6 +61,8 @@ export interface Config {
     queryCacheSize?: number;
     /** @internal Alternate memory-store path for embedded hosts and tests. */
     storePath?: string;
+    /** Committed workspace moves supplied by the embedding host; no filesystem aliases are required. */
+    pathRelocations?: readonly import('./project-path.js').ProjectPathRelocation[];
     /** @internal Alternate Web-settings path for embedded hosts and tests. */
     settingsPath?: string;
 }

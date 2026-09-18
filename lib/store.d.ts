@@ -4,6 +4,8 @@
  * projections. The in-memory shape remains stable for retrieval and UI code.
  */
 import type { MemoirLanguage, MemoirLanguageSource } from './i18n.js';
+import { type ProjectPathRelocation } from './project-path.js';
+export { projectKey } from './project-path.js';
 /** Global index format version. */
 export declare const FORMAT_VERSION = 4;
 /** Project memory file name (workspace root, git-committable). */
@@ -148,15 +150,6 @@ export declare function withFileLock<T>(lockPath: string, fn: () => T, options?:
 }): T;
 /** `YYYY-MM-DD HH:mm` in local time. */
 export declare function formatTime(ms: number): string;
-/**
- * Normalize one workspace path into a stable key:
- * strip trailing separators, unify separators to '/'. Windows drive paths
- * are FULLY lowercased (v0.4.2) — the canonical bucket key of C:\A /
- * c:\a\ / C:/A is 'c:/a', so all case variants share one bucket. The
- * display path stored on the project keeps its original case. POSIX paths
- * are unchanged apart from trailing separators.
- */
-export declare function projectKey(cwd: string): string;
 /** Project display title: the last path segment. */
 export declare function projectTitle(cwd: string): string;
 /** Atomic write (unique tmp name + rename), creating the parent dir. */
@@ -203,6 +196,7 @@ export declare class MemoirStore {
     private renderCount;
     private renderComputeCount;
     private readonly languageSource;
+    private readonly resolveProjectPath;
     /**
      * @param path - SQLite database path (defaults to the standard location).
      * @param options.mtimeCheckIntervalMs - data-version probe throttle; 0 probes on
@@ -217,9 +211,13 @@ export declare class MemoirStore {
         lockStaleAfterMs?: number;
         language?: MemoirLanguageSource;
         legacyJsonPath?: string | false;
+        pathRelocations?: readonly ProjectPathRelocation[];
     });
     /** Current model-facing language (live when backed by Web settings). */
     language(): MemoirLanguage;
+    /** Resolve a historical project path without consulting the filesystem. */
+    projectPath(cwd: string): string;
+    private key;
     /** The cross-process lock file guarding mutations of this store. */
     private lockFilePath;
     /**

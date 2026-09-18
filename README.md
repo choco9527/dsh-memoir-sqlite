@@ -155,6 +155,8 @@ $DSH_HOME/dsh-memoir-sqlite/settings.json GUI 运行时设置覆盖
 
 ## 配置
 
+嵌入式宿主可通过启动配置 `pathRelocations: [{ from, to }]` 提供已完成的工作区迁移。旧、新路径读取同一份项目记忆；设置页和 Markdown 写入使用新路径，不依赖旧目录、软链接或旧 App。已有条目的 ID、来源和审计记录保留，下一次记忆修改时将合并后的项目索引持久化。映射必须是绝对非根目录，禁止重复来源、链式映射和循环；此配置不在设置页开放。
+
 以下字段都可写在 `cordis.patch.yml` 的 memoir `config` 中；除已停用的 `autoDistill*`、`enabled` 和 `showConversationView` 外，也可从记忆面板或 Settings 设置卡即时修改并持久化。
 
 | 字段 | 默认值 | 作用 |
