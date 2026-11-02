@@ -6,21 +6,35 @@
 
 export interface SessionRecordLike {
   cwd?: string
+  retainedBy?: { readonly mainView?: number }
+}
+
+/** Alpha exposes current; rc.1 marks the main view on its retained Session row. */
+export interface SessionListLike {
+  current?: string
+  byId: Readonly<Record<string, SessionRecordLike>>
 }
 
 export interface SessionsLike {
   list: {
-    getSnapshot(): { current: string | undefined; byId: Record<string, SessionRecordLike> }
+    getSnapshot(): SessionListLike
     subscribe(listener: () => void): () => void
   }
 }
 
+/** Resolve the main-view workspace without treating background retained Sessions as selected. */
+export function readSessionCwd(snapshot: SessionListLike): string {
+  const rows = Object.values(snapshot.byId)
+  const current = rows.some(row => row.retainedBy !== undefined)
+    ? rows.find(row => (row.retainedBy?.mainView ?? 0) > 0)
+    : snapshot.current === undefined ? undefined : snapshot.byId[snapshot.current]
+  const cwd = current?.cwd
+  return typeof cwd === 'string' && cwd !== '' ? cwd : ''
+}
+
 /** Read the active session's cwd from a sessions service snapshot ('' when none). */
 export function readCwd(sessions: SessionsLike): string {
-  const snapshot = sessions.list.getSnapshot()
-  const id = snapshot.current
-  const cwd = id === undefined ? undefined : snapshot.byId[id]?.cwd
-  return typeof cwd === 'string' && cwd !== '' ? cwd : ''
+  return readSessionCwd(sessions.list.getSnapshot())
 }
 
 /** A useSyncExternalStore-compatible tracker over the sessions service. */

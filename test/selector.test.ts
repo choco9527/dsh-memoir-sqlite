@@ -209,6 +209,7 @@ test('custom hardMax 50/100/200 is never exceeded', () => {
 test('truncateEntryToBudget fits an oversized entry into a small ceiling', () => {
   const entry: MemoirEntry = { id: 'big', section: 'lessons', content: '长'.repeat(10000), time: 1 }
   const truncated = truncateEntryToBudget(entry, 50)
+  assert.ok(truncated)
   assert.ok(truncated.content.length < entry.content.length, 'content shortened')
   assert.ok(truncated.content.endsWith('…'), 'truncation marker present')
   assert.ok(estimateTokens(renderHotMemory([truncated])) <= 50, 'rendered single-entry block fits 50 tokens')

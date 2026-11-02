@@ -9,7 +9,7 @@
 This project is forked from [`dsh-memoir`](https://github.com/Qinling-Melon-Farmers/dsh-memoir). It preserves Hot Memory, CJK BM25, lifecycle management, and the native Web GUI while replacing the structured source of truth with Node's built-in `node:sqlite`. It needs no ORM, embeddings, vector database, or cloud memory service.
 
 > [!IMPORTANT]
-> The current source targets `@deepseek-ai/dsh >=0.1.2-alpha.2 <0.1.3`. It exposes the same tools and UI identifiers as upstream `dsh-memoir`; do not enable both in one profile.
+> The current source targets `@deepseek-ai/dsh 0.2.0-rc.1`, `0.2.0-rc.2`, and `0.2.1-rc.2`. It exposes the same tools and UI identifiers as upstream `dsh-memoir`; do not enable both in one profile.
 
 Build from source and install through `link:` or a tarball as shown below. Memory remains local and is not automatically deleted when the plugin is updated or removed.
 
@@ -18,7 +18,7 @@ Build from source and install through `link:` or a tarball as shown below. Memor
 | Capability | What you get |
 | --- | --- |
 | Local-first storage | A SQLite source of truth plus per-project `PROJECT_MEMORY.md` projections; no memory upload or external service |
-| Conservative admission | Save explicit requests, lasting preferences, and rule corrections without turn-end review |
+| Evidence-based admission | Save explicit requests, corrections, confirmed workflows, and verified reusable lessons without turn-end review |
 | Bounded Hot Memory | Only high-value memory enters the system prompt under a hard token limit; a frozen session prefix improves prompt-prefix cache hits |
 | BM25 ranked recall | Searches Chinese phrases, English keywords, code identifiers, and paths; cross-project Top-K and query LRU caching use one engine |
 | Governable memory | Importance, pinning, tags, archive/restore, and supersede lifecycle; similar writes require an explicit update, replacement, or keep-both decision |
@@ -67,11 +67,11 @@ Similar-memory governance starts with BM25 candidates, then combines title simil
 - `supersede`: retain old history and mark it as replaced by the new record;
 - `force-record`: explicitly keep both.
 
-## Conservative admission
+## Evidence-based admission
 
 No turn-end listener is registered, so memory review adds no model call or maintenance reply. Legacy autoDistill settings are accepted but resolved to false; cadence fields are inert and no longer shown as controls.
 
-Save only explicit requests to remember, clearly stated long-term preferences, or corrections to lasting rules. Use one concise rule per item, do not infer preferences from a single choice, and do not automatically save lessons or task progress. Read only for a specific historical need or to check a qualified candidate for duplication. Admission remains model-guided rather than a database semantic filter.
+Save only explicit requests to remember, corrections to lasting rules, confirmed long-term workflows, repeated consistent long-term preferences, or verified reusable solutions. Automatically write at most one entry per turn and prefer updating or superseding the same topic; use one concise rule per item, do not infer preferences from a single choice or temporary state, and do not automatically save task progress or one-off results. Read a small set of relevant memories when work touches a related domain, a repeated problem, a continuing task, or an inherited project; start with compact summaries and expand only when details are truly needed, and cite cross-project entries only when they clearly apply. Admission remains model-guided rather than a database semantic filter.
 
 Existing entries are preserved and remain queryable. Automatic injection includes actions and lessons only, not work records or notes. Default estimated hot-memory budgets are 300 target / 500 maximum, excluding plugin guidance and tool descriptions; memoir_read returns 3 entries by default. Explicit profile/custom budgets still apply. Settings files v1–v3 are read without rewriting: the old saved 900/1200 pair and default read count 8 migrate to 300/500 and 3, while custom values remain. Saving writes v4.
 
@@ -90,7 +90,7 @@ Top-5 recall on the fixed quality set is 100%; the repository gate requires at l
 
 ## Web GUI
 
-Installing into a DSH-alpha `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors.
+Installing into a DSH `web` profile registers a native Memory Conversation view and Memory Settings section through official slots. The DSH shell owns layout, navigation, and unload lifecycle; Memoir no longer takes over the legacy sidebar through DOM selectors. On rc.1, Settings finds the current project through `retainedBy.mainView` and source links use `uiWorkspace.openSession`.
 
 - Project memory and all-project global memory, with project groups collapsed by default and complete lifecycle totals;
 - status, section, and keyword filters with BM25 scores;
@@ -123,7 +123,7 @@ Installing into a DSH-alpha `web` profile registers a native Memory Conversation
 
 ## Installation and compatibility
 
-Node.js `^22.19.0 || >=24.0.0` and DSH `>=0.1.2-alpha.2 <0.1.3` are required. The source uses pnpm:
+Node.js `^22.19.0 || >=24.0.0` and DSH `0.2.0-rc.1`, `0.2.0-rc.2`, or `0.2.1-rc.2` are required. The host startup check reads the top-level `engines.dsh`; the legacy metadata and both DSH peers declare the same range. The source uses pnpm:
 
 ```bash
 git clone https://github.com/choco9527/dsh-memoir-sqlite.git
@@ -134,6 +134,8 @@ dsh plugin --profile web add "link:/absolute/path/dsh-memoir-sqlite"
 ```
 
 Restart the target DSH profile. You can also run `pnpm pack` and have an app build install the resulting tarball.
+
+Version 0.1.1 selectively adopts upstream 0.9.3 literal-prompt protection and Hot Memory budget fixes. Memory containing `{{...}}` is not evaluated as a variable; titles, content and grouping overhead count toward the ceiling, and oversized candidates leave room for later smaller memories. The SQLite format, existing memories and curated admission policy are unchanged; no database migration or reset is needed. Build and test SDKs are pinned to `0.2.1-rc.2`. Older 0.1.2 alpha hosts lack literal-section support and must stay on plugin 0.1.0.
 
 ## Storage, privacy, and security boundaries
 

@@ -1,5 +1,6 @@
 /**
- * Automatic turn-end distillation: when the plugin is enabled, each turn of a
+ * Legacy turn-end distillation helper; the host plugin no longer installs it.
+ * When explicitly installed, each eligible turn of a
  * top-level agent that did real work (made tool calls) and did not already
  * record memory is followed by one steering step asking the agent to assess
  * curated long-term candidates, with no write required. Turns without tool activity are left
@@ -11,6 +12,14 @@
  */
 import type { UserMessage } from '@deepseek-ai/dsh-llm';
 import type { MemoirLanguage } from './i18n.js';
+declare module '@deepseek-ai/dsh-llm' {
+    interface MessageSourceMap {
+        /** Optional memory assessment requested by the legacy distillation helper. */
+        'plugin:dsh-memoir-sqlite': {
+            kind: 'plugin:dsh-memoir-sqlite';
+        };
+    }
+}
 /** The steering prompt injected at the end of an active turn. */
 export declare function distillPrompt(language?: MemoirLanguage): string;
 /** Backwards-compatible Chinese prompt constant. */

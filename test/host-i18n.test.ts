@@ -13,10 +13,10 @@ import { makeTempStorePath, makeTempWorkspace } from './helpers.ts'
 
 const CJK = /[\u3400-\u9fff]/u
 
-test('all writing prompts require curated durable knowledge in both languages', () => {
+test('all policy surfaces require evidence-based durable knowledge in both languages', () => {
   const cases = [
-    ['zh', [/精选长期记忆/, /长期偏好/, /纠正长期规则/, /不自动记录经验总结/, /Job ID/, /一句简短规则/, /不确定.*不写/, /明确要求.*记住/]],
-    ['en', [/curated long-term memory/, /long-term preference/, /corrects a lasting rule/, /automatically save lessons/, /Job IDs/, /one concise rule/, /uncertain.*do not write/, /explicitly asks.*remember/]],
+    ['zh', [/精选长期记忆/, /长期偏好/, /纠正长期规则/, /验证过且可复用/, /Job ID/, /一句简短规则/, /不确定.*不写/, /明确要求.*记住/, /相关业务.*接续任务/, /跨项目.*引用/, /每轮最多一条/, /少量 compact 摘要/]],
+    ['en', [/curated long-term memory/, /long-term preference/, /corrects a lasting rule/, /verified reusable solution/, /Job IDs/, /one concise rule/, /uncertain.*do not write/, /explicitly asks.*remember/, /related domain.*continuing task/, /cross-project.*clearly apply/, /at most one entry per turn/, /small set of compact summaries/]],
   ] as const
   for (const [language, rules] of cases) {
     const surfaces = [memoirGuidance(language), distillPrompt(language), hostCopy(language).record.description]
@@ -25,6 +25,19 @@ test('all writing prompts require curated durable knowledge in both languages', 
     }
     assert.doesNotMatch(distillPrompt(language), /若本轮有实质产出|If the turn produced substantive work/)
   }
+})
+
+test('the read tool advertises proactive recall without an unconditional session-start call', () => {
+  const zh = hostCopy('zh').read.description(3)
+  const en = hostCopy('en').read.description(3)
+  for (const [surface, rules] of [
+    [zh, [/相关业务.*接续任务/, /不要等用户追问历史/, /默认少量摘要/, /full\/global/]],
+    [en, [/related domain.*continuing task/, /instead of waiting for the user to ask about history/, /default small set of summaries/, /full\/global/]],
+  ] as const) {
+    for (const rule of rules) assert.match(surface, rule)
+  }
+  assert.doesNotMatch(zh, /开始新会话或接手旧项目时先调用/)
+  assert.doesNotMatch(en, /starting a new session/)
 })
 
 test('English agent copy contains no hardcoded Chinese in prompt surfaces', () => {

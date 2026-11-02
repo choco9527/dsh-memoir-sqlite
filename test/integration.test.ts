@@ -9,6 +9,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { rmSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import { apply, MEMOIR_GUIDANCE, memoirSectionText } from '../lib/index.js'
 import type { Config } from '../lib/index.js'
 import { MemoirStore } from '../lib/store.js'
@@ -26,7 +27,7 @@ function makeCtx() {
     registeredTools: [] as Array<{ name: string; description: string; execute: (args: any, exec: any) => Promise<any> }>,
     registeredRoutes: [] as Array<{ kind: string; path: string; handler: (req: any, res: any) => Promise<void> | void }>,
     listeners: [] as ListenerRecord[],
-    sections: [] as Array<{ name: string; order: number; text: ((context: unknown) => string) | string }>,
+    sections: [] as Array<{ name: string; order: number; interpolate?: boolean; text: ((context: unknown) => string) | string }>,
     tools: {
       register: (def: { name: string; description: string }) => {
         ctx.registeredTools.push(def as never)
@@ -254,6 +255,35 @@ test('prompt section provider injects bounded project memory', () => {
     assert.ok(rendered.startsWith(MEMOIR_GUIDANCE))
     assert.ok(rendered.includes('项目持久记忆（自动注入）'))
     assert.ok(rendered.includes('契约先行'))
+  } finally {
+    ws.cleanup()
+  }
+})
+
+test('new and frozen memory reach the real prompt renderer as literal text', async () => {
+  const ws = makeTempWorkspace()
+  try {
+    const ctx = makeCtx()
+    applyTest(ctx)
+    const literal = '规则保留 {{missing}}、{{cwd}} 和 {{ malformed name }} 原文'
+    await ctx.registeredTools[0]!.execute({ section: 'actions', content: literal }, makeExec(ws.cwd))
+    const section = ctx.sections[0]!
+    const provider = section.text
+    assert.equal(typeof provider, 'function')
+    if (typeof provider !== 'function') throw new Error('expected a memory provider')
+    const context = { agent: { id: 'literal-session', session: { id: 'literal-session', header: { cwd: ws.cwd } } } }
+    const frozen = provider(context)
+    for (const cwd of ['first-render', 'later-render']) {
+      const output = renderPrompt({
+        sections: [{ name: section.name, text: provider(context), interpolate: section.interpolate }],
+        contexts: [], tools: [], variables: { cwd },
+      })
+      assert.equal(output, frozen)
+      assert.ok(output.includes(literal))
+      assert.ok(!output.includes(cwd))
+    }
+    const normalSection = { sections: [{ name: 'normal', text: '{{cwd}}' }], contexts: [], tools: [], variables: { cwd: 'normal-value' } }
+    assert.equal(renderPrompt(normalSection), 'normal-value', 'other prompt sections still interpolate')
   } finally {
     ws.cleanup()
   }

@@ -1,7 +1,7 @@
 # dsh-memoir-sqlite bundle patch: inserts the host-half plugin row into the web
 # profile roster. Applied as a profile bundle layer (the `dsh.bundle.patch`
 # manifest field) over dsh-base. The fork targets the published DSH
-# npm alpha line >=0.1.2-alpha.2 <0.1.3 and installs from npm with
+# npm alpha line >=0.1.2-alpha.2 <0.1.3 and 0.2.0-rc.1, and installs from npm with
 #   dsh plugin --profile web add dsh-memoir-sqlite@latest
 #
 # The row is a bare plugin by package name: the node half (exports ".")

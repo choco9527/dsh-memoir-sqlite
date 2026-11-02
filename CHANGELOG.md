@@ -14,6 +14,22 @@
 - Curate long-term memory through a shared admission policy across system guidance, turn-end reminders, and the write tool; skip uncertain candidates and routine task logs while honoring explicit user requests.
 - Update bilingual documentation and settings guidance without changing cadence, categories, the database schema, or existing memory.
 
+## [0.1.1] - 2026-10-26
+
+### 中文
+
+- 选择性迁入 `dsh-memoir@0.9.3` 的原文提示词和预算修复，保留 SQLite 数据库、actions/lessons 自动注入及关闭轮末沉淀的 Argo 策略。
+- 通过 `interpolate: false` 保留新记忆与冻结快照中的 `{{...}}` 原文，不改写已存条目。
+- 硬预算计入标题和分组开销；必要时截短标题，最小块仍超限则跳过；超出剩余预算的候选不再阻断后续较短记忆。
+- 构建 SDK 固定为 DSH `0.2.1-rc.2`；不再支持缺少原文保护接口的 0.1.2 alpha 宿主，旧宿主继续使用插件 0.1.0。SQLite schema 与 settings 格式不变，无需数据迁移。
+
+### English
+
+- Selectively adopt literal-prompt and budget fixes from `dsh-memoir@0.9.3`, preserving SQLite storage, actions/lessons-only injection and Argo's disabled turn-end distillation.
+- Preserve `{{...}}` verbatim in new memory and frozen snapshots through `interpolate: false`, without rewriting stored entries.
+- Count titles and grouping overhead toward the hard budget, shorten titles when necessary, and skip blocks that cannot fit. Oversized candidates no longer block later smaller memories.
+- Pin build SDKs to DSH `0.2.1-rc.2`. Drop 0.1.2 alpha hosts without literal-section support; those hosts must remain on plugin 0.1.0. SQLite schema and settings formats are unchanged and need no migration.
+
 ## [0.1.0] - 2026-09-04
 
 ### 中文

@@ -1,5 +1,5 @@
 /**
- * Browser-half entry for the DSH 0.1.2 alpha client architecture.
+ * Browser-half entry for the DSH alpha and 0.2.0-rc.1 client architectures.
  *
  * The alpha shell removed dsh-client-runtime and exposes additive UI through
  * domain-owned slots. Memoir therefore registers as a native Conversation
@@ -23,6 +23,8 @@ import { MemoirApi } from './api.js'
 import { makeT } from './i18n.js'
 import { MemoirPanel } from './panel.jsx'
 import { mountPanelStyles } from './styles.js'
+import { readSessionCwd } from './cwd.js'
+import { openSourceSession } from './source-navigation.js'
 
 type NativeGlobalProps = { useSessions: UseSessions }
 type NativeSettingsSectionProps = PropsRuntime<'settings.section'> & NativeGlobalProps
@@ -75,7 +77,7 @@ function ConversationMemoirView({
         cwd={cwd}
         t={t}
         openSource={(sourceSessionId, turnId) => {
-          ctx.sessions.open(sourceSessionId as SessionId)
+          openSourceSession(ctx, sourceSessionId as SessionId)
           revealSourceTurn(turnId)
         }}
       />
@@ -95,10 +97,7 @@ function SettingsMemoirSection({
   ctx: Context
   t: (key: string) => string
 }) {
-  const cwd = useSessions((snapshot: SessionListState) => {
-    const current = snapshot.current
-    return current === undefined ? '' : snapshot.byId[current]?.cwd ?? ''
-  })
+  const cwd = useSessions(readSessionCwd)
   return (
     <div className="memoir-settings-section" data-dsh-plugin="memoir" data-dsh-part="settings-section">
       <MemoirPanel
@@ -107,8 +106,8 @@ function SettingsMemoirSection({
         t={t}
         onClose={close}
         openSource={(sourceSessionId, turnId) => {
+          openSourceSession(ctx, sourceSessionId as SessionId)
           close()
-          ctx.sessions.open(sourceSessionId as SessionId)
           revealSourceTurn(turnId)
         }}
       />

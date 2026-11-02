@@ -357,6 +357,8 @@ export function apply(ctx: Context, config?: Config): void {
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'plugin:dsh-memoir-sqlite',
     order: SECTION_ORDER,
+    // Stored memory and frozen snapshots contain literal text, including {{...}}.
+    interpolate: false,
     // Always observe the trusted assembly cwd for Web write authorization.
     // When announcement is disabled, the provider returns no prompt content.
     // Hot-memory budgets are read live for each new session snapshot.

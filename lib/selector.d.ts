@@ -59,18 +59,17 @@ export interface HotMemoryResult {
     estimatedTokens: number;
 }
 /**
- * Truncate one entry's content so the rendered single-entry block fits the
- * hard token ceiling. Binary-searches the largest fitting code-point length
- * (monotone in the token estimate). Used only for the degenerate case of an
- * oversized FIRST candidate — normal selection never exceeds hardMax.
+ * Fit one entry's rendered block to the hard ceiling without changing the
+ * original. Shorten content first, then the title when necessary. Return
+ * undefined if even the localized headings and a title-free ellipsis cannot fit.
  */
-export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry;
+export declare function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry | undefined;
 /**
  * Select ranked actions then lessons under the budget.
  * Work records and notes are available only through explicit retrieval.
- * Each candidate is added while the rendered estimate stays below
- * targetTokens; hardMaxTokens is never exceeded (an oversized first
- * candidate is truncated into place via truncateEntryToBudget).
+ * Skip candidates that exceed the remaining hard budget and keep scanning
+ * for smaller entries. Stop when an accepted entry reaches targetTokens.
+ * Truncate an oversized first entry only when its minimal block fits.
  *
  * @param entries - one project's entries.
  * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).

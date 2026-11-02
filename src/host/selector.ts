@@ -135,31 +135,43 @@ export interface HotMemoryResult {
 }
 
 /**
- * Truncate one entry's content so the rendered single-entry block fits the
- * hard token ceiling. Binary-searches the largest fitting code-point length
- * (monotone in the token estimate). Used only for the degenerate case of an
- * oversized FIRST candidate — normal selection never exceeds hardMax.
+ * Fit one entry's rendered block to the hard ceiling without changing the
+ * original. Shorten content first, then the title when necessary. Return
+ * undefined if even the localized headings and a title-free ellipsis cannot fit.
  */
-export function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry {
-  if (estimateTokens(renderHotMemory([entry], language)) <= hardMaxTokens) return entry
-  const cps = [...entry.content]
-  let lo = 0
-  let hi = cps.length
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2)
-    const probe = { ...entry, content: cps.slice(0, mid).join('') + '…' }
-    if (estimateTokens(renderHotMemory([probe], language)) <= hardMaxTokens) lo = mid
-    else hi = mid - 1
+export function truncateEntryToBudget(entry: MemoirEntry, hardMaxTokens: number, language?: MemoirLanguage): MemoirEntry | undefined {
+  const fits = (probe: MemoirEntry): boolean => estimateTokens(renderHotMemory([probe], language)) <= hardMaxTokens
+  if (fits(entry)) return entry
+
+  function fitPrefix(field: 'title' | 'content', base: MemoirEntry): MemoirEntry {
+    const cps = [...(entry[field] ?? '')]
+    let result = base
+    let lo = 1
+    let hi = cps.length
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2)
+      const probe = { ...base, [field]: cps.slice(0, mid).join('') + '…' }
+      if (fits(probe)) {
+        result = probe
+        lo = mid + 1
+      } else hi = mid - 1
+    }
+    return result
   }
-  return { ...entry, content: cps.slice(0, lo).join('') + '…' }
+
+  const minimalContent = { ...entry, content: '…' }
+  if (fits(minimalContent)) return fitPrefix('content', minimalContent)
+  const minimalBlock = { ...minimalContent, title: undefined }
+  if (!fits(minimalBlock)) return undefined
+  return fitPrefix('content', fitPrefix('title', minimalBlock))
 }
 
 /**
  * Select ranked actions then lessons under the budget.
  * Work records and notes are available only through explicit retrieval.
- * Each candidate is added while the rendered estimate stays below
- * targetTokens; hardMaxTokens is never exceeded (an oversized first
- * candidate is truncated into place via truncateEntryToBudget).
+ * Skip candidates that exceed the remaining hard budget and keep scanning
+ * for smaller entries. Stop when an accepted entry reaches targetTokens.
+ * Truncate an oversized first entry only when its minimal block fits.
  *
  * @param entries - one project's entries.
  * @param budget - token budget (defaults to DEFAULT_MEMORY_BUDGET).
@@ -179,17 +191,17 @@ export function selectHotMemory(
   for (const entry of candidates) {
     if (selectedIds.has(entry.id)) continue
     const probe = selected.length === 0 ? [entry] : [...selected, entry]
-    const tokens = estimateTokens(renderHotMemory(probe, language))
+    let candidate = entry
+    let tokens = estimateTokens(renderHotMemory(probe, language))
     if (tokens > budget.hardMaxTokens) {
-      if (selected.length === 0) {
-        // A single oversized entry: force it in truncated so output stays
-        // bounded and non-empty.
-        selected.push(truncateEntryToBudget(entry, budget.hardMaxTokens, language))
-      }
-      break
+      if (selected.length > 0) continue
+      const truncated = truncateEntryToBudget(entry, budget.hardMaxTokens, language)
+      if (truncated === undefined) continue
+      candidate = truncated
+      tokens = estimateTokens(renderHotMemory([candidate], language))
     }
-    selected.push(entry)
-    selectedIds.add(entry.id)
+    selected.push(candidate)
+    selectedIds.add(candidate.id)
     if (tokens >= budget.targetTokens) break
   }
   const text = selected.length === 0 ? '' : renderHotMemory(selected, language)
